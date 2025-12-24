@@ -11,7 +11,8 @@ const client = new MongoClient(uri, {
     }
 });
 
-const db = client.db('contestHubDB');
+const db = client.db('diningManagementDB');
+const mealScheduleCollection = db.collection('mealSchedules')
 
 const connectMongoDB = () => {
     async function run() {
@@ -25,4 +26,5 @@ const connectMongoDB = () => {
 
 module.exports = {
     connectMongoDB,
+    mealScheduleCollection
 }
