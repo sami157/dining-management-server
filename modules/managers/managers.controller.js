@@ -1,10 +1,10 @@
 const { ObjectId } = require('mongodb');
-const { mealScheduleCollection } = require('../../config/connectMongodb'); // Adjust path
+const { mealSchedules } = require('../../config/connectMongodb'); // Adjust path
 
 // Helper function to check if a date is weekend (Fri or Sat)
 const isWeekend = (date) => {
-  const day = date.getDay(); // 0=Sun, 1=Mon, ..., 5=Fri, 6=Sat
-  return day === 5 || day === 6; // Friday or Saturday
+  const day = date.getDay(); // 0 to 6, 0 = Sun
+  return day === 5 || day === 6;
 };
 
 // Helper function to get available meals based on day type
@@ -30,15 +30,15 @@ const getDefaultMeals = (date, isHoliday) => {
   return meals;
 };
 
-exports.generateSchedules = async (req, res) => {
+generateSchedules = async (req, res) => {
   try {
     const { startDate, endDate } = req.body;
-    const managerId = new ObjectId(req.user._id); // Assuming auth middleware sets req.user
+    const managerId = new ObjectId(req.user?._id) || 'temp'; // Assuming auth middleware sets req.user
 
     // Validate inputs
     if (!startDate || !endDate) {
       return res.status(400).json({ 
-        error: 'startDate and endDate are required' 
+        error: 'Start and end dates are required' 
       });
     }
 
@@ -60,7 +60,7 @@ exports.generateSchedules = async (req, res) => {
       dateToCheck.setHours(0, 0, 0, 0); // Normalize to start of day
 
       // Check if schedule already exists for this date
-      const existingSchedule = await mealScheduleCollection.findOne({
+      const existingSchedule = await mealSchedules.findOne({
         date: dateToCheck
       });
 
@@ -84,7 +84,7 @@ exports.generateSchedules = async (req, res) => {
 
     // Insert all schedules
     if (schedulesToCreate.length > 0) {
-      const result = await mealScheduleCollection.insertMany(schedulesToCreate);
+      const result = await mealSchedules.insertMany(schedulesToCreate);
       return res.status(201).json({
         message: `${result.insertedCount} schedules created successfully`,
         count: result.insertedCount
@@ -103,3 +103,181 @@ exports.generateSchedules = async (req, res) => {
     });
   }
 };
+
+getSchedules = async (req, res) => {
+  try {
+    const { startDate, endDate } = req.body;
+
+    // Validate inputs
+    if (!startDate || !endDate) {
+      return res.status(400).json({ 
+        error: 'startDate and endDate are required' 
+      });
+    }
+
+    const start = new Date(startDate);
+    const end = new Date(endDate);
+    
+    start.setHours(0, 0, 0, 0);
+    end.setHours(23, 59, 59, 999);
+
+    if (start > end) {
+      return res.status(400).json({ 
+        error: 'startDate must be before endDate' 
+      });
+    }
+
+    // Fetch schedules within date range
+    const schedules = await mealSchedules.find({
+      date: {
+        $gte: start,
+        $lte: end
+      }
+    })
+    .sort({ date: 1 }) // Sort by date ascending
+    .toArray();
+
+    return res.status(200).json({
+      count: schedules.length,
+      schedules: schedules
+    });
+
+  } catch (error) {
+    console.error('Error fetching schedules:', error);
+    return res.status(500).json({ 
+      error: 'Failed to fetch schedules' 
+    });
+  }
+};
+
+updateSchedule = async (req, res) => {
+  try {
+    const { scheduleId } = req.params;
+    const { isHoliday, availableMeals } = req.body;
+
+    // Validate scheduleId
+    if (!ObjectId.isValid(scheduleId)) {
+      return res.status(400).json({ 
+        error: 'Invalid schedule ID' 
+      });
+    }
+
+    // Validate availableMeals structure
+    if (availableMeals && !Array.isArray(availableMeals)) {
+      return res.status(400).json({ 
+        error: 'availableMeals must be an array' 
+      });
+    }
+
+    // Build update object
+    const updateData = {
+      updatedAt: new Date()
+    };
+
+    if (isHoliday !== undefined) {
+      updateData.isHoliday = isHoliday;
+    }
+
+    if (availableMeals) {
+      updateData.availableMeals = availableMeals;
+    }
+
+    // Update the schedule
+    const result = await mealSchedules.findOneAndUpdate(
+      { _id: new ObjectId(scheduleId) },
+      { $set: updateData },
+      { returnDocument: 'after' } // Return updated document
+    );
+
+    if (!result) {
+      return res.status(404).json({ 
+        error: 'Schedule not found' 
+      });
+    }
+
+    return res.status(200).json({
+      message: 'Schedule updated successfully',
+      schedule: result
+    });
+
+  } catch (error) {
+    console.error('Error updating schedule:', error);
+    return res.status(500).json({ 
+      error: 'Failed to update schedule' 
+    });
+  }
+};
+
+bulkUpdateSchedules = async (req, res) => {
+  try {
+    const { schedules } = req.body;
+
+    // Validate input
+    if (!schedules || !Array.isArray(schedules) || schedules.length === 0) {
+      return res.status(400).json({ 
+        error: 'schedules array is required and cannot be empty' 
+      });
+    }
+
+    const updatePromises = [];
+    const errors = [];
+
+    // Process each schedule update
+    for (const schedule of schedules) {
+      const { scheduleId, isHoliday, availableMeals } = schedule;
+
+      // Validate scheduleId
+      if (!scheduleId || !ObjectId.isValid(scheduleId)) {
+        errors.push({ scheduleId, error: 'Invalid schedule ID' });
+        continue;
+      }
+
+      // Build update object
+      const updateData = {
+        updatedAt: new Date()
+      };
+
+      if (isHoliday !== undefined) {
+        updateData.isHoliday = isHoliday;
+      }
+
+      if (availableMeals) {
+        updateData.availableMeals = availableMeals;
+      }
+
+      // Add update operation to promises array
+      updatePromises.push(
+        mealSchedules.updateOne(
+          { _id: new ObjectId(scheduleId) },
+          { $set: updateData }
+        )
+      );
+    }
+
+    // Execute all updates
+    const results = await Promise.all(updatePromises);
+    
+    // Count successful updates
+    const successCount = results.filter(r => r.modifiedCount > 0).length;
+
+    return res.status(200).json({
+      message: `${successCount} schedules updated successfully`,
+      successCount: successCount,
+      totalAttempted: schedules.length,
+      errors: errors.length > 0 ? errors : undefined
+    });
+
+  } catch (error) {
+    console.error('Error bulk updating schedules:', error);
+    return res.status(500).json({ 
+      error: 'Failed to bulk update schedules' 
+    });
+  }
+};
+
+module.exports = {
+  generateSchedules,
+  getSchedules,
+  updateSchedule,
+  bulkUpdateSchedules
+}
