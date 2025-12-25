@@ -5,39 +5,32 @@ const VALID_ROLES = ['admin', 'manager', 'member', 'moderator', 'staff'];
 
 const createUser = async (req, res) => {
   try {
-    const { firebaseUid, name, mobile, designation, department, role } = req.body;
+    const { name, mobile, designation, department, role } = req.body;
 
     // Validate required fields
-    if (!firebaseUid || !name || !mobile || !role) {
+    if (!name || !mobile || !email) {
       return res.status(400).json({
-        error: 'firebaseUid, name, mobile, and role are required'
+        error: 'name, mobile, email are required'
       });
     }
 
-    // Validate role
-    if (!VALID_ROLES.includes(role)) {
-      return res.status(400).json({
-        error: `role must be one of: ${VALID_ROLES.join(', ')}`
-      });
-    }
 
     // Check if user already exists
-    const existingUser = await users.findOne({ firebaseUid });
+    const existingUser = await users.findOne({ email });
 
     if (existingUser) {
       return res.status(400).json({
-        error: 'User with this Firebase UID already exists'
+        error: 'User with this email already exists'
       });
     }
 
     // Create user
     const newUser = {
-      firebaseUid,
       name,
       mobile,
       designation: designation || '',
       department: department || '',
-      role,
+      role: 'member',
       createdAt: new Date(),
       updatedAt: new Date()
     };
@@ -60,10 +53,10 @@ const createUser = async (req, res) => {
 
 getUserProfile = async (req, res) => {
   try {
-    const firebaseUid = req.user?.firebaseUid || 'temp'; // From auth middleware
+    const email = req.user?.email || 'temp'; // From auth middleware
 
     // Find user by Firebase UID
-    const user = await users.findOne({ firebaseUid });
+    const user = await users.findOne({ email });
 
     if (!user) {
       return res.status(404).json({
@@ -86,7 +79,7 @@ getUserProfile = async (req, res) => {
 
 updateUserProfile = async (req, res) => {
   try {
-    const firebaseUid = req.user?.firebaseUid || 'temp';
+    const email = req.user?.email || 'temp';
     const { name, mobile, designation, department } = req.body;
 
     // Build update object with only provided fields
@@ -101,7 +94,7 @@ updateUserProfile = async (req, res) => {
 
     // Update user
     const result = await users.findOneAndUpdate(
-      { firebaseUid },
+      { email },
       { $set: updateData },
       { returnDocument: 'after' }
     );
