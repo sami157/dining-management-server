@@ -106,7 +106,7 @@ generateSchedules = async (req, res) => {
 
 getSchedules = async (req, res) => {
   try {
-    const { startDate, endDate } = req.body;
+    const { startDate, endDate } = req.query;
 
     // Validate inputs
     if (!startDate || !endDate) {

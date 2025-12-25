@@ -12,7 +12,10 @@ const client = new MongoClient(uri, {
 });
 
 const db = client.db('diningManagementDB');
+const users = db.collection('users')
 const mealSchedules = db.collection('mealSchedules')
+const mealRegistrations = db.collection('mealRegistrations');
+
 
 const connectMongoDB = () => {
     async function run() {
@@ -26,5 +29,7 @@ const connectMongoDB = () => {
 
 module.exports = {
     connectMongoDB,
-    mealSchedules
+    users,
+    mealSchedules,
+    mealRegistrations
 }
