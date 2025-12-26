@@ -12,18 +12,16 @@ const getDefaultMeals = (date, isHoliday) => {
   const meals = [];
   
   if (isWeekend(date) || isHoliday) {
-    // Weekend or holiday: all 3 meals
     meals.push(
-      { mealType: 'morning', isAvailable: true, customDeadline: null },
-      { mealType: 'evening', isAvailable: true, customDeadline: null },
-      { mealType: 'night', isAvailable: true, customDeadline: null }
+      { mealType: 'morning', isAvailable: true, customDeadline: null, menu: '' },
+      { mealType: 'evening', isAvailable: true, customDeadline: null, menu: '' },
+      { mealType: 'night', isAvailable: true, customDeadline: null, menu: '' }
     );
   } else {
-    // Weekday: night meal only
     meals.push(
-      { mealType: 'morning', isAvailable: false, customDeadline: null },
-      { mealType: 'evening', isAvailable: false, customDeadline: null },
-      { mealType: 'night', isAvailable: true, customDeadline: null }
+      { mealType: 'morning', isAvailable: false, customDeadline: null, menu: '' },
+      { mealType: 'evening', isAvailable: false, customDeadline: null, menu: '' },
+      { mealType: 'night', isAvailable: true, customDeadline: null, menu: '' }
     );
   }
   
