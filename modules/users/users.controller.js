@@ -24,22 +24,42 @@ const calculateDeadline = (mealDate, mealType, customDeadline) => {
 
 getAvailableMeals = async (req, res) => {
   try {
-    const { startDate, endDate } = req.query;
-    const userId = req.user?._id || 'temp'; // Temporary
+    const { startDate, endDate, month } = req.query;
+    const userId = req.user?._id || 'temp';
     const currentTime = new Date();
 
-    // Validate inputs
-    if (!startDate || !endDate) {
-      return res.status(400).json({
-        error: 'startDate and endDate are required'
-      });
+    let start, end;
+
+    // If month is provided, calculate start and end dates
+    if (month) {
+      const monthRegex = /^\d{4}-(0[1-9]|1[0-2])$/;
+      if (!monthRegex.test(month)) {
+        return res.status(400).json({
+          error: 'month must be in YYYY-MM format (e.g., 2025-01)'
+        });
+      }
+
+      const [year, monthNum] = month.split('-').map(Number);
+      start = new Date(year, monthNum - 1, 1);
+      end = new Date(year, monthNum, 0); // Last day of month
+      
+      start.setHours(0, 0, 0, 0);
+      end.setHours(23, 59, 59, 999);
     }
+    // Otherwise use startDate and endDate
+    else {
+      if (!startDate || !endDate) {
+        return res.status(400).json({
+          error: 'Either month OR both startDate and endDate are required'
+        });
+      }
 
-    const start = new Date(startDate);
-    const end = new Date(endDate);
+      start = new Date(startDate);
+      end = new Date(endDate);
 
-    start.setHours(0, 0, 0, 0);
-    end.setHours(23, 59, 59, 999);
+      start.setHours(0, 0, 0, 0);
+      end.setHours(23, 59, 59, 999);
+    }
 
     // Fetch schedules
     const schedules = await mealSchedules.find({
@@ -70,6 +90,7 @@ getAvailableMeals = async (req, res) => {
         return {
           mealType: meal.mealType,
           isAvailable: meal.isAvailable,
+          menu: meal.menu || '',
           deadline: deadline,
           canRegister: meal.isAvailable && !isDeadlinePassed && !isRegistered,
           isRegistered: isRegistered,
