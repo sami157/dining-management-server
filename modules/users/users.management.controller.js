@@ -5,7 +5,7 @@ const VALID_ROLES = ['admin', 'manager', 'member', 'moderator', 'staff'];
 
 const createUser = async (req, res) => {
   try {
-    const { name, email, mobile, designation, department, role } = req.body;
+    const { name, email, mobile, designation, bank, department } = req.body;
 
     // Validate required fields
     if (!name || !mobile || !email) {
@@ -28,6 +28,7 @@ const createUser = async (req, res) => {
     const newUser = {
       name,
       mobile,
+      bank,
       designation: designation || '',
       department: department || '',
       role: 'member',
