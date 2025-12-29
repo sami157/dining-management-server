@@ -42,7 +42,7 @@ getAvailableMeals = async (req, res) => {
       const [year, monthNum] = month.split('-').map(Number);
       start = new Date(year, monthNum - 1, 1);
       end = new Date(year, monthNum, 0); // Last day of month
-      
+
       start.setHours(0, 0, 0, 0);
       end.setHours(23, 59, 59, 999);
     }
@@ -91,6 +91,7 @@ getAvailableMeals = async (req, res) => {
           mealType: meal.mealType,
           isAvailable: meal.isAvailable,
           menu: meal.menu || '',
+          weight: meal.weight || 1, // Add this
           deadline: deadline,
           canRegister: meal.isAvailable && !isDeadlinePassed && !isRegistered,
           isRegistered: isRegistered,
@@ -187,20 +188,20 @@ registerMeal = async (req, res) => {
       registeredAt: new Date()
     };
 
-  const result = await mealRegistrations.insertOne(registration);
+    const result = await mealRegistrations.insertOne(registration);
 
-  return res.status(201).json({
-    message: 'Meal registered successfully',
-    registrationId: result.insertedId,
-    registration: { ...registration, _id: result.insertedId }
-  });
+    return res.status(201).json({
+      message: 'Meal registered successfully',
+      registrationId: result.insertedId,
+      registration: { ...registration, _id: result.insertedId }
+    });
 
-} catch (error) {
-  console.error('Error registering meal:', error);
-  return res.status(500).json({
-    error: 'Failed to register meal'
-  });
-}
+  } catch (error) {
+    console.error('Error registering meal:', error);
+    return res.status(500).json({
+      error: 'Failed to register meal'
+    });
+  }
 }
 
 cancelMealRegistration = async (req, res) => {
@@ -210,8 +211,8 @@ cancelMealRegistration = async (req, res) => {
 
     // Validate registrationId
     if (!ObjectId.isValid(registrationId)) {
-      return res.status(400).json({ 
-        error: 'Invalid registration ID' 
+      return res.status(400).json({
+        error: 'Invalid registration ID'
       });
     }
 
@@ -222,8 +223,8 @@ cancelMealRegistration = async (req, res) => {
     });
 
     if (result.deletedCount === 0) {
-      return res.status(404).json({ 
-        error: 'Registration not found' 
+      return res.status(404).json({
+        error: 'Registration not found'
       });
     }
 
@@ -233,8 +234,8 @@ cancelMealRegistration = async (req, res) => {
 
   } catch (error) {
     console.error('Error cancelling meal registration:', error);
-    return res.status(500).json({ 
-      error: 'Failed to cancel meal registration' 
+    return res.status(500).json({
+      error: 'Failed to cancel meal registration'
     });
   }
 };
@@ -251,7 +252,7 @@ getMyRegistrations = async (req, res) => {
     if (startDate && endDate) {
       const start = new Date(startDate);
       const end = new Date(endDate);
-      
+
       start.setHours(0, 0, 0, 0);
       end.setHours(23, 59, 59, 999);
 
@@ -270,8 +271,8 @@ getMyRegistrations = async (req, res) => {
 
   } catch (error) {
     console.error('Error fetching user registrations:', error);
-    return res.status(500).json({ 
-      error: 'Failed to fetch registrations' 
+    return res.status(500).json({
+      error: 'Failed to fetch registrations'
     });
   }
 };

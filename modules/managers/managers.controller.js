@@ -13,15 +13,15 @@ const getDefaultMeals = (date, isHoliday) => {
   
   if (isWeekend(date) || isHoliday) {
     meals.push(
-      { mealType: 'morning', isAvailable: true, customDeadline: null, menu: '' },
-      { mealType: 'evening', isAvailable: true, customDeadline: null, menu: '' },
-      { mealType: 'night', isAvailable: true, customDeadline: null, menu: '' }
+      { mealType: 'morning', isAvailable: true, customDeadline: null, weight: 0.5, menu: '' },
+      { mealType: 'evening', isAvailable: true, customDeadline: null, weight: 1, menu: '' },
+      { mealType: 'night', isAvailable: true, customDeadline: null, weight: 1, menu: '' }
     );
   } else {
     meals.push(
-      { mealType: 'morning', isAvailable: false, customDeadline: null, menu: '' },
-      { mealType: 'evening', isAvailable: false, customDeadline: null, menu: '' },
-      { mealType: 'night', isAvailable: true, customDeadline: null, menu: '' }
+      { mealType: 'morning', isAvailable: false, customDeadline: null, weight: 0.5, menu: '' },
+      { mealType: 'evening', isAvailable: false, customDeadline: null, weight: 1, menu: '' },
+      { mealType: 'night', isAvailable: true, customDeadline: null, weight: 1, menu: '' }
     );
   }
   
@@ -31,9 +31,8 @@ const getDefaultMeals = (date, isHoliday) => {
 generateSchedules = async (req, res) => {
   try {
     const { startDate, endDate } = req.body;
-    const managerId = new ObjectId(req.user?._id) || 'temp'; // Assuming auth middleware sets req.user
+    const managerId = 'temp';
 
-    // Validate inputs
     if (!startDate || !endDate) {
       return res.status(400).json({ 
         error: 'Start and end dates are required' 
@@ -42,6 +41,10 @@ generateSchedules = async (req, res) => {
 
     const start = new Date(startDate);
     const end = new Date(endDate);
+    
+    // IMPORTANT: Set to noon to avoid timezone issues
+    start.setHours(12, 0, 0, 0);
+    end.setHours(12, 0, 0, 0);
 
     if (start > end) {
       return res.status(400).json({ 
@@ -52,18 +55,15 @@ generateSchedules = async (req, res) => {
     const schedulesToCreate = [];
     const currentDate = new Date(start);
 
-    // Loop through each date in range
     while (currentDate <= end) {
       const dateToCheck = new Date(currentDate);
-      dateToCheck.setHours(0, 0, 0, 0); // Normalize to start of day
+      dateToCheck.setHours(12, 0, 0, 0); // Keep at noon
 
-      // Check if schedule already exists for this date
       const existingSchedule = await mealSchedules.findOne({
         date: dateToCheck
       });
 
       if (!existingSchedule) {
-        // Create new schedule with auto-fill logic
         const schedule = {
           date: dateToCheck,
           isHoliday: false,
@@ -76,11 +76,9 @@ generateSchedules = async (req, res) => {
         schedulesToCreate.push(schedule);
       }
 
-      // Move to next day
       currentDate.setDate(currentDate.getDate() + 1);
     }
 
-    // Insert all schedules
     if (schedulesToCreate.length > 0) {
       const result = await mealSchedules.insertMany(schedulesToCreate);
       return res.status(201).json({
@@ -153,21 +151,18 @@ updateSchedule = async (req, res) => {
     const { scheduleId } = req.params;
     const { isHoliday, availableMeals } = req.body;
 
-    // Validate scheduleId
     if (!ObjectId.isValid(scheduleId)) {
       return res.status(400).json({ 
         error: 'Invalid schedule ID' 
       });
     }
 
-    // Validate availableMeals structure
     if (availableMeals && !Array.isArray(availableMeals)) {
       return res.status(400).json({ 
         error: 'availableMeals must be an array' 
       });
     }
 
-    // Build update object
     const updateData = {
       updatedAt: new Date()
     };
@@ -177,14 +172,22 @@ updateSchedule = async (req, res) => {
     }
 
     if (availableMeals) {
-      updateData.availableMeals = availableMeals;
+      // Ensure weight is included when updating
+      const processedMeals = availableMeals.map(meal => ({
+        mealType: meal.mealType,
+        isAvailable: meal.isAvailable,
+        customDeadline: meal.customDeadline || null,
+        weight: meal.weight !== undefined ? meal.weight : 1, // Default weight if missing
+        menu: meal.menu || ''
+      }));
+      
+      updateData.availableMeals = processedMeals;
     }
 
-    // Update the schedule
     const result = await mealSchedules.findOneAndUpdate(
       { _id: new ObjectId(scheduleId) },
       { $set: updateData },
-      { returnDocument: 'after' } // Return updated document
+      { returnDocument: 'after' }
     );
 
     if (!result) {
