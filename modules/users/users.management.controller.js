@@ -27,6 +27,7 @@ const createUser = async (req, res) => {
     // Create user
     const newUser = {
       name,
+      email,
       mobile,
       bank,
       designation: designation || '',

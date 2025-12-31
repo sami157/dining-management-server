@@ -25,10 +25,8 @@ const calculateDeadline = (mealDate, mealType, customDeadline) => {
 getAvailableMeals = async (req, res) => {
   try {
     const { startDate, endDate, month } = req.query;
-    const userId = req.user?._id || 'temp';
+    const userId = req.user?._id
     const currentTime = new Date();
-
-    let start, end;
 
     if (month) {
       const monthRegex = /^\d{4}-(0[1-9]|1[0-2])$/;
@@ -65,7 +63,7 @@ getAvailableMeals = async (req, res) => {
 
     // Fetch user's existing registrations
     const userRegistrations = await mealRegistrations.find({
-      userId: userId,
+      userId,
       date: { $gte: start, $lte: end }
     }).toArray();
 
@@ -119,7 +117,7 @@ getAvailableMeals = async (req, res) => {
 registerMeal = async (req, res) => {
   try {
     const { date, mealType } = req.body;
-    const userId = req.user?._id || 'temp';
+    const userId = req.user?._id
     const currentTime = new Date();
 
     // Validate inputs

@@ -1,6 +1,6 @@
 const admin = require("firebase-admin");
 const serviceAccount = require("../key.json");
-const { usersCollection } = require("../config/connectMongodb")
+const { users } = require("../config/connectMongodb")
 admin.initializeApp({
     credential: admin.credential.cert(serviceAccount)
 });
@@ -18,7 +18,7 @@ const verifyFirebaseToken = () => {
 
             const decoded = await admin.auth().verifyIdToken(idToken);
             const email = decoded.email;
-            const user = await usersCollection.findOne({ email });
+            const user = await users.findOne({ email });
             req.user = user;
             next();
         } catch (err) {
