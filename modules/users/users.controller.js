@@ -1,5 +1,5 @@
 const { ObjectId } = require('mongodb');
-const { mealSchedules, mealRegistrations } = require('../../config/connectMongodb');
+const { mealSchedules, mealRegistrations, users } = require('../../config/connectMongodb');
 
 // Default deadline rules
 const MEAL_DEADLINES = {
@@ -272,10 +272,103 @@ getMyRegistrations = async (req, res) => {
   }
 };
 
+getTotalMealsForUser = async (req, res) => {
+  try {
+    const { email } = req.params; // User ID
+    const { month } = req.query; // Format: YYYY-MM (e.g., "2025-01")
+
+    // Find user by email
+    const user = await users.findOne({ email });
+
+    if (!user) {
+      return res.status(404).json({
+        error: 'User not found'
+      });
+    }
+
+    // Validate month format if provided
+    if (month) {
+      const monthRegex = /^\d{4}-(0[1-9]|1[0-2])$/;
+      if (!monthRegex.test(month)) {
+        return res.status(400).json({
+          error: 'month must be in YYYY-MM format (e.g., 2025-01)'
+        });
+      }
+    }
+
+    let start, end;
+
+    if (month) {
+      // Calculate date range for the month
+      const [year, monthNum] = month.split('-').map(Number);
+      start = new Date(year, monthNum - 1, 1);
+      end = new Date(year, monthNum, 0); // Last day of month
+      
+      start.setHours(0, 0, 0, 0);
+      end.setHours(23, 59, 59, 999);
+    } else {
+      // If no month provided, calculate for current month
+      const now = new Date();
+      start = new Date(now.getFullYear(), now.getMonth(), 1);
+      end = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+      
+      start.setHours(0, 0, 0, 0);
+      end.setHours(23, 59, 59, 999);
+    }
+
+    // Fetch user's registrations for the month using user._id
+    const registrations = await mealRegistrations.find({
+      userId: user._id, // Convert ObjectId to string if needed
+      date: { $gte: start, $lte: end }
+    }).toArray();
+
+    // Calculate total meals based on weight
+    let totalMeals = 0;
+    const mealBreakdown = {
+      morning: 0,
+      evening: 0,
+      night: 0
+    };
+
+    // For each registration, get the meal weight from schedule
+    for (const registration of registrations) {
+      const schedule = await mealSchedules.findOne({
+        date: registration.date
+      });
+
+      if (schedule) {
+        const meal = schedule.availableMeals.find(m => m.mealType === registration.mealType);
+        if (meal) {
+          const weight = meal.weight || 1;
+          totalMeals += weight;
+          mealBreakdown[registration.mealType] += weight;
+        }
+      }
+    }
+
+    return res.status(200).json({
+      userId: user._id,
+      userName: user.name,
+      email: user.email,
+      month: month || format(start, 'yyyy-MM'),
+      totalMeals: totalMeals,
+      mealCount: registrations.length,
+      breakdown: mealBreakdown,
+      registrations: registrations.length
+    });
+
+  } catch (error) {
+    console.error('Error calculating total meals:', error);
+    return res.status(500).json({
+      error: 'Failed to calculate total meals'
+    });
+  }
+};
 
 module.exports = {
   getAvailableMeals,
   registerMeal,
   cancelMealRegistration,
   getMyRegistrations,
+  getTotalMealsForUser
 }
