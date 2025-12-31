@@ -30,7 +30,6 @@ getAvailableMeals = async (req, res) => {
 
     let start, end;
 
-    // If month is provided, calculate start and end dates
     if (month) {
       const monthRegex = /^\d{4}-(0[1-9]|1[0-2])$/;
       if (!monthRegex.test(month)) {
@@ -41,13 +40,11 @@ getAvailableMeals = async (req, res) => {
 
       const [year, monthNum] = month.split('-').map(Number);
       start = new Date(year, monthNum - 1, 1);
-      end = new Date(year, monthNum, 0); // Last day of month
-
+      end = new Date(year, monthNum, 0);
+      
       start.setHours(0, 0, 0, 0);
       end.setHours(23, 59, 59, 999);
-    }
-    // Otherwise use startDate and endDate
-    else {
+    } else {
       if (!startDate || !endDate) {
         return res.status(400).json({
           error: 'Either month OR both startDate and endDate are required'
@@ -139,7 +136,7 @@ registerMeal = async (req, res) => {
     }
 
     const mealDate = new Date(date);
-    mealDate.setHours(0, 0, 0, 0);
+    mealDate.setHours(12, 0, 0, 0); // Set to noon to avoid timezone issues
 
     // Check if schedule exists for this date
     const schedule = await mealSchedules.findOne({ date: mealDate });
@@ -202,7 +199,7 @@ registerMeal = async (req, res) => {
       error: 'Failed to register meal'
     });
   }
-}
+};
 
 cancelMealRegistration = async (req, res) => {
   try {
