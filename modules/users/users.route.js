@@ -12,7 +12,7 @@ router.post('/create', createUser);
 router.get('/profile', getUserProfile);
 router.put('/profile', updateUserProfile);
 router.put('/:userId/role', updateUserRole); //admin only access
-router.get('/', getAllUsers); //admin or manager can access
+router.get('/', verifyFirebaseToken(), getAllUsers); //admin or manager can access
 
 // get all available meals
 router.get('/meals/available', verifyFirebaseToken(), getAvailableMeals);
