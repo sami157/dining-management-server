@@ -1,5 +1,5 @@
 const { ObjectId } = require('mongodb');
-const { mealSchedules } = require('../../config/connectMongodb'); // Adjust path
+const { mealSchedules, mealRegistrations, users } = require('../../config/connectMongodb'); // Adjust path
 
 // Helper function to check if a date is weekend (Fri or Sat)
 const isWeekend = (date) => {
@@ -276,9 +276,83 @@ bulkUpdateSchedules = async (req, res) => {
   }
 };
 
+getAllRegistrations = async (req, res) => {
+  try {
+    const { startDate, endDate } = req.query;
+
+    // Validate inputs
+    if (!startDate || !endDate) {
+      return res.status(400).json({
+        error: 'startDate and endDate query parameters are required'
+      });
+    }
+
+    const start = new Date(startDate);
+    const end = new Date(endDate);
+
+    start.setHours(0, 0, 0, 0);
+    end.setHours(23, 59, 59, 999);
+
+    if (start > end) {
+      return res.status(400).json({
+        error: 'startDate must be before endDate'
+      });
+    }
+
+    // Fetch all registrations within date range
+    const registrations = await mealRegistrations.find({
+      date: {
+        $gte: start,
+        $lte: end
+      }
+    })
+    .sort({ date: 1, userId: 1, mealType: 1 })
+    .toArray();
+
+    console.log(registrations)
+
+    // Optional: Populate user details
+    const userIds = [...new Set(registrations.map(r => r.userId))];
+    const usersMap = {};
+    
+    if (userIds.length > 0) {
+      const usersList = await users.find({
+        _id: { $in: userIds.map(id => new ObjectId(id)) }
+      }).toArray();
+      
+      usersList.forEach(user => {
+        usersMap[user._id.toString()] = {
+          name: user.name,
+          email: user.email
+        };
+      });
+    }
+
+    // Enrich registrations with user info
+    const enrichedRegistrations = registrations.map(reg => ({
+      ...reg,
+      user: usersMap[reg.userId] || null
+    }));
+
+    return res.status(200).json({
+      count: enrichedRegistrations.length,
+      startDate,
+      endDate,
+      registrations: enrichedRegistrations
+    });
+
+  } catch (error) {
+    console.error('Error fetching all registrations:', error);
+    return res.status(500).json({
+      error: 'Failed to fetch registrations'
+    });
+  }
+};
+
 module.exports = {
   generateSchedules,
   getSchedules,
   updateSchedule,
-  bulkUpdateSchedules
+  bulkUpdateSchedules,
+  getAllRegistrations
 }

@@ -116,8 +116,9 @@ getAvailableMeals = async (req, res) => {
 
 registerMeal = async (req, res) => {
   try {
-    const { date, mealType } = req.body;
-    const userId = req.user?._id
+    const { date, mealType, userId: requestUserId } = req.body;
+    // Allow manager to register for any user, otherwise use authenticated user
+    const userId = requestUserId || req.user?._id
     const currentTime = new Date();
 
     // Validate inputs
@@ -134,7 +135,7 @@ registerMeal = async (req, res) => {
     }
 
     const mealDate = new Date(date);
-    mealDate.setHours(12, 0, 0, 0); // Set to noon to avoid timezone issues
+    mealDate.setHours(12, 0, 0, 0);
 
     // Check if schedule exists for this date
     const schedule = await mealSchedules.findOne({ date: mealDate });
@@ -202,7 +203,6 @@ registerMeal = async (req, res) => {
 cancelMealRegistration = async (req, res) => {
   try {
     const { registrationId } = req.params;
-    const userId = req.user?._id || 'temp';
 
     // Validate registrationId
     if (!ObjectId.isValid(registrationId)) {
@@ -211,10 +211,9 @@ cancelMealRegistration = async (req, res) => {
       });
     }
 
-    // Delete the registration
+    // Delete the registration (no userId check - allows manager to delete any registration)
     const result = await mealRegistrations.deleteOne({
-      _id: new ObjectId(registrationId),
-      userId: userId
+      _id: new ObjectId(registrationId)
     });
 
     if (result.deletedCount === 0) {
@@ -238,7 +237,7 @@ cancelMealRegistration = async (req, res) => {
 getMyRegistrations = async (req, res) => {
   try {
     const { startDate, endDate } = req.query;
-    const userId = req.user?._id || 'temp';
+    const userId = req.user?._id
 
     // Build query
     const query = { userId: userId };

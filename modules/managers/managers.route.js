@@ -1,5 +1,5 @@
 const express = require('express');
-const { generateSchedules, getSchedules, updateSchedule, bulkUpdateSchedules } = require('./managers.controller');
+const { generateSchedules, getSchedules, updateSchedule, bulkUpdateSchedules, getAllRegistrations } = require('./managers.controller');
 const router = express.Router();
 
 // Create leal schedules
@@ -13,5 +13,8 @@ router.put('/schedules/:scheduleId', updateSchedule);
 
 // Update Schedules in bulk
 router.patch('/schedules/bulk-update', bulkUpdateSchedules);
+
+// Get all registrations for a date range
+router.get('/registrations', getAllRegistrations);
 
 module.exports = router;
