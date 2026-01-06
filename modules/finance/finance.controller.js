@@ -447,6 +447,317 @@ getAllFinalizations = async (req, res) => {
   }
 };
 
+
+// Get all deposits (with optional filters)
+getAllDeposits = async (req, res) => {
+  try {
+    const { month, userId } = req.query;
+    
+    const query = {};
+    if (month) query.month = month;
+    if (userId) query.userId = userId;
+
+    const allDeposits = await deposits.find(query)
+      .sort({ depositDate: -1 })
+      .toArray();
+
+    // Enrich with user details
+    const enrichedDeposits = await Promise.all(
+      allDeposits.map(async (deposit) => {
+        const user = await users.findOne({ _id: new ObjectId(deposit.userId) });
+        return {
+          ...deposit,
+          userName: user?.name || 'Unknown',
+          userEmail: user?.email || ''
+        };
+      })
+    );
+
+    return res.status(200).json({
+      count: enrichedDeposits.length,
+      deposits: enrichedDeposits
+    });
+
+  } catch (error) {
+    console.error('Error fetching deposits:', error);
+    return res.status(500).json({
+      error: 'Failed to fetch deposits'
+    });
+  }
+};
+
+// Update deposit
+updateDeposit = async (req, res) => {
+  try {
+    const { depositId } = req.params;
+    const { amount, month, depositDate, notes } = req.body;
+
+    if (!ObjectId.isValid(depositId)) {
+      return res.status(400).json({
+        error: 'Invalid deposit ID'
+      });
+    }
+
+    // Find existing deposit
+    const existingDeposit = await deposits.findOne({ _id: new ObjectId(depositId) });
+    if (!existingDeposit) {
+      return res.status(404).json({
+        error: 'Deposit not found'
+      });
+    }
+
+    // Check if month is finalized
+    if (month && month !== existingDeposit.month) {
+      const finalized = await monthlyFinalization.findOne({ month: existingDeposit.month });
+      if (finalized) {
+        return res.status(400).json({
+          error: 'Cannot update deposit - month is already finalized'
+        });
+      }
+    }
+
+    const oldAmount = existingDeposit.amount;
+    const newAmount = amount !== undefined ? amount : oldAmount;
+    const amountDifference = newAmount - oldAmount;
+
+    // Build update object
+    const updateData = { updatedAt: new Date() };
+    if (amount !== undefined) updateData.amount = amount;
+    if (month !== undefined) updateData.month = month;
+    if (depositDate !== undefined) updateData.depositDate = new Date(depositDate);
+    if (notes !== undefined) updateData.notes = notes;
+
+    // Update deposit
+    await deposits.updateOne(
+      { _id: new ObjectId(depositId) },
+      { $set: updateData }
+    );
+
+    // Update member balance if amount changed
+    if (amountDifference !== 0) {
+      await memberBalances.updateOne(
+        { userId: existingDeposit.userId },
+        {
+          $inc: { balance: amountDifference },
+          $set: { lastUpdated: new Date() }
+        }
+      );
+    }
+
+    return res.status(200).json({
+      message: 'Deposit updated successfully'
+    });
+
+  } catch (error) {
+    console.error('Error updating deposit:', error);
+    return res.status(500).json({
+      error: 'Failed to update deposit'
+    });
+  }
+};
+
+// Delete deposit
+deleteDeposit = async (req, res) => {
+  try {
+    const { depositId } = req.params;
+
+    if (!ObjectId.isValid(depositId)) {
+      return res.status(400).json({
+        error: 'Invalid deposit ID'
+      });
+    }
+
+    // Find existing deposit
+    const existingDeposit = await deposits.findOne({ _id: new ObjectId(depositId) });
+    if (!existingDeposit) {
+      return res.status(404).json({
+        error: 'Deposit not found'
+      });
+    }
+
+    // Check if month is finalized
+    const finalized = await monthlyFinalization.findOne({ month: existingDeposit.month });
+    if (finalized) {
+      return res.status(400).json({
+        error: 'Cannot delete deposit - month is already finalized'
+      });
+    }
+
+    // Delete deposit
+    await deposits.deleteOne({ _id: new ObjectId(depositId) });
+
+    // Update member balance (subtract the amount)
+    await memberBalances.updateOne(
+      { userId: existingDeposit.userId },
+      {
+        $inc: { balance: -existingDeposit.amount },
+        $set: { lastUpdated: new Date() }
+      }
+    );
+
+    return res.status(200).json({
+      message: 'Deposit deleted successfully'
+    });
+
+  } catch (error) {
+    console.error('Error deleting deposit:', error);
+    return res.status(500).json({
+      error: 'Failed to delete deposit'
+    });
+  }
+};
+
+
+
+// Get all expenses (with optional filters)
+getAllExpenses = async (req, res) => {
+  try {
+    const { startDate, endDate, category, userId } = req.query;
+    
+    const query = {};
+    
+    if (startDate && endDate) {
+      const start = new Date(startDate);
+      const end = new Date(endDate);
+      start.setHours(0, 0, 0, 0);
+      end.setHours(23, 59, 59, 999);
+      query.date = { $gte: start, $lte: end };
+    }
+    
+    if (category) query.category = category;
+    if (userId) query.userId = userId;
+
+    const allExpenses = await expenses.find(query)
+      .sort({ date: -1 })
+      .toArray();
+
+    // Enrich with user details
+    const enrichedExpenses = await Promise.all(
+      allExpenses.map(async (expense) => {
+        const user = await users.findOne({ _id: new ObjectId(expense.userId) });
+        return {
+          ...expense,
+          userName: user?.name || 'Unknown',
+          userEmail: user?.email || ''
+        };
+      })
+    );
+
+    return res.status(200).json({
+      count: enrichedExpenses.length,
+      expenses: enrichedExpenses
+    });
+
+  } catch (error) {
+    console.error('Error fetching expenses:', error);
+    return res.status(500).json({
+      error: 'Failed to fetch expenses'
+    });
+  }
+};
+
+// Update expense
+updateExpense = async (req, res) => {
+  try {
+    const { expenseId } = req.params;
+    const { date, category, amount, description, receiptUrl } = req.body;
+
+    if (!ObjectId.isValid(expenseId)) {
+      return res.status(400).json({
+        error: 'Invalid expense ID'
+      });
+    }
+
+    // Find existing expense
+    const existingExpense = await expenses.findOne({ _id: new ObjectId(expenseId) });
+    if (!existingExpense) {
+      return res.status(404).json({
+        error: 'Expense not found'
+      });
+    }
+
+    // Check if the expense's month is finalized
+    const expenseMonth = format(existingExpense.date, 'yyyy-MM');
+    const finalized = await monthlyFinalization.findOne({ month: expenseMonth });
+    if (finalized) {
+      return res.status(400).json({
+        error: 'Cannot update expense - month is already finalized'
+      });
+    }
+
+    // Build update object
+    const updateData = { updatedAt: new Date() };
+    if (date !== undefined) {
+      const newDate = new Date(date);
+      newDate.setHours(12, 0, 0, 0);
+      updateData.date = newDate;
+    }
+    if (category !== undefined) updateData.category = category;
+    if (amount !== undefined) updateData.amount = amount;
+    if (description !== undefined) updateData.description = description;
+    if (receiptUrl !== undefined) updateData.receiptUrl = receiptUrl;
+
+    // Update expense
+    await expenses.updateOne(
+      { _id: new ObjectId(expenseId) },
+      { $set: updateData }
+    );
+
+    return res.status(200).json({
+      message: 'Expense updated successfully'
+    });
+
+  } catch (error) {
+    console.error('Error updating expense:', error);
+    return res.status(500).json({
+      error: 'Failed to update expense'
+    });
+  }
+};
+
+// Delete expense
+deleteExpense = async (req, res) => {
+  try {
+    const { expenseId } = req.params;
+
+    if (!ObjectId.isValid(expenseId)) {
+      return res.status(400).json({
+        error: 'Invalid expense ID'
+      });
+    }
+
+    // Find existing expense
+    const existingExpense = await expenses.findOne({ _id: new ObjectId(expenseId) });
+    if (!existingExpense) {
+      return res.status(404).json({
+        error: 'Expense not found'
+      });
+    }
+
+    // Check if the expense's month is finalized
+    const expenseMonth = format(existingExpense.date, 'yyyy-MM');
+    const finalized = await monthlyFinalization.findOne({ month: expenseMonth });
+    if (finalized) {
+      return res.status(400).json({
+        error: 'Cannot delete expense - month is already finalized'
+      });
+    }
+
+    // Delete expense
+    await expenses.deleteOne({ _id: new ObjectId(expenseId) });
+
+    return res.status(200).json({
+      message: 'Expense deleted successfully'
+    });
+
+  } catch (error) {
+    console.error('Error deleting expense:', error);
+    return res.status(500).json({
+      error: 'Failed to delete expense'
+    });
+  }
+};
+
 module.exports = {
   addDeposit,
   addExpense,
@@ -454,5 +765,11 @@ module.exports = {
   getUserBalance,
   finalizeMonth,
   getMonthFinalization,
-  getAllFinalizations
+  getAllFinalizations,
+  getAllDeposits,
+  updateDeposit,
+  deleteDeposit,
+  getAllExpenses,
+  updateExpense,
+  deleteExpense
 }
