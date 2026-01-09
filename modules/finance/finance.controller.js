@@ -1,6 +1,6 @@
 const { ObjectId } = require('mongodb');
 const { format } = require('date-fns');
-const { deposits, memberBalances, users, expenses } = require('../../config/connectMongodb');
+const { deposits, memberBalances, users, expenses, monthlyFinalization } = require('../../config/connectMongodb');
 
 addDeposit = async (req, res) => {
   try {
@@ -88,13 +88,13 @@ addDeposit = async (req, res) => {
 
 addExpense = async (req, res) => {
   try {
-    const { date, category, amount, description, receiptUrl, userId } = req.body;
-    const managerId = req.user?._id || 'temp';
+    const { date, category, amount, description } = req.body;
+    const managerId = req.user?._id
 
     // Validate required fields
-    if (!date || !category || !amount || !userId) {
+    if (!date || !category || !amount) {
       return res.status(400).json({
-        error: 'date, category, amount, and userId are required'
+        error: 'date, category, and amount are required'
       });
     }
 
@@ -105,26 +105,16 @@ addExpense = async (req, res) => {
       });
     }
 
-    // Check if user exists
-    const user = await users.findOne({ _id: new ObjectId(userId) });
-    if (!user) {
-      return res.status(404).json({
-        error: 'User not found'
-      });
-    }
-
     const expenseDate = new Date(date);
     expenseDate.setHours(12, 0, 0, 0); // Normalize to noon
 
     // Create expense record
     const expense = {
-      userId: userId,  // Added userId
       date: expenseDate,
       category: category,
       amount: amount,
       description: description || '',
-      receiptUrl: receiptUrl || '',
-      addedBy: managerId,
+      addedBy: managerId,  // Only this - no userId field
       createdAt: new Date(),
       updatedAt: new Date()
     };
@@ -612,7 +602,7 @@ deleteDeposit = async (req, res) => {
 // Get all expenses (with optional filters)
 getAllExpenses = async (req, res) => {
   try {
-    const { startDate, endDate, category, userId } = req.query;
+    const { startDate, endDate, category } = req.query;
     
     const query = {};
     
@@ -625,20 +615,29 @@ getAllExpenses = async (req, res) => {
     }
     
     if (category) query.category = category;
-    if (userId) query.userId = userId;
 
     const allExpenses = await expenses.find(query)
       .sort({ date: -1 })
       .toArray();
 
-    // Enrich with user details
+    // Enrich with manager details who added it
     const enrichedExpenses = await Promise.all(
       allExpenses.map(async (expense) => {
-        const user = await users.findOne({ _id: new ObjectId(expense.userId) });
+        let addedByName = 'Unknown';
+        
+        // Check if addedBy is a valid ObjectId
+        if (expense.addedBy && ObjectId.isValid(expense.addedBy)) {
+          try {
+            const manager = await users.findOne({ _id: new ObjectId(expense.addedBy) });
+            addedByName = manager?.name || 'Unknown';
+          } catch (err) {
+            console.error('Error fetching manager:', err);
+          }
+        }
+        
         return {
           ...expense,
-          userName: user?.name || 'Unknown',
-          userEmail: user?.email || ''
+          addedByName
         };
       })
     );
@@ -660,7 +659,7 @@ getAllExpenses = async (req, res) => {
 updateExpense = async (req, res) => {
   try {
     const { expenseId } = req.params;
-    const { date, category, amount, description, receiptUrl } = req.body;
+    const { date, category, amount, description } = req.body;
 
     if (!ObjectId.isValid(expenseId)) {
       return res.status(400).json({
@@ -695,7 +694,6 @@ updateExpense = async (req, res) => {
     if (category !== undefined) updateData.category = category;
     if (amount !== undefined) updateData.amount = amount;
     if (description !== undefined) updateData.description = description;
-    if (receiptUrl !== undefined) updateData.receiptUrl = receiptUrl;
 
     // Update expense
     await expenses.updateOne(

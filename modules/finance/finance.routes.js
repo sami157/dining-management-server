@@ -24,7 +24,7 @@ router.put('/deposits/:depositId', updateDeposit);
 router.delete('/deposits/:depositId', deleteDeposit);
 
 // Expenses
-router.post('/expenses/add', addExpense);
+router.post('/expenses/add', verifyFirebaseToken(), addExpense);
 router.get('/expenses', getAllExpenses);
 router.put('/expenses/:expenseId', updateExpense);
 router.delete('/expenses/:expenseId', deleteExpense);
