@@ -118,8 +118,9 @@ registerMeal = async (req, res) => {
   try {
     const { date, mealType, userId: requestUserId } = req.body;
     // Allow manager to register for any user, otherwise use authenticated user
-    const userId = requestUserId || req.user?._id
+    const userId = new ObjectId(requestUserId) || req.user?._id
     const currentTime = new Date();
+
 
     // Validate inputs
     if (!date || !mealType) {
@@ -155,17 +156,19 @@ registerMeal = async (req, res) => {
       });
     }
 
-    // Check deadline
+    // Check deadline only if registration requetsed by user
+    if(!requestUserId){
     const deadline = calculateDeadline(mealDate, mealType, meal.customDeadline);
     if (currentTime > deadline) {
       return res.status(400).json({
         error: 'Registration deadline has passed for this meal'
       });
     }
+    }
 
     // Check if user already registered
     const existingRegistration = await mealRegistrations.findOne({
-      userId: userId,
+      userId,
       date: mealDate,
       mealType: mealType,
     });
@@ -178,7 +181,7 @@ registerMeal = async (req, res) => {
 
     // Create registration
     const registration = {
-      userId: userId,
+      userId,
       date: mealDate,
       mealType: mealType,
       registeredAt: new Date()

@@ -124,7 +124,7 @@ updateUserRole = async (req, res) => {
   try {
     const { userId } = req.params;
     const { role } = req.body;
-    const currentUserRole = req.user?.role || 'temp'; // From auth middleware
+    const currentUserRole = req.user?.role // From auth middleware
 
     // Check if current user is admin or manager
     if (!['admin', 'manager'].includes(currentUserRole)) {

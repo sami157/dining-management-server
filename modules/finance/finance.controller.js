@@ -119,6 +119,7 @@ addExpense = async (req, res) => {
       updatedAt: new Date()
     };
 
+
     const result = await expenses.insertOne(expense);
 
     return res.status(201).json({

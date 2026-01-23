@@ -309,8 +309,6 @@ getAllRegistrations = async (req, res) => {
     .sort({ date: 1, userId: 1, mealType: 1 })
     .toArray();
 
-    console.log(registrations)
-
     // Optional: Populate user details
     const userIds = [...new Set(registrations.map(r => r.userId))];
     const usersMap = {};
