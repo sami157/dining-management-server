@@ -1,10 +1,7 @@
 const express = require('express');
 const verifyFirebaseToken = require('../../middleware/verifyFirebaseToken')
-const { getAvailableMeals, getTotalMealsForUser } = require('./users.controller');
-const { registerMeal } = require('./users.controller');
-const { cancelMealRegistration } = require('./users.controller');
-const { getMyRegistrations } = require('./users.controller');
-const { createUser, getUserProfile, updateUserProfile, updateUserRole } = require('./users.management.controller');
+const { getAvailableMeals, getTotalMealsForUser, cancelMealRegistration, registerMeal,getMyRegistrations } = require('./users.controller');
+const { createUser, getUserProfile, updateUserProfile, updateUserRole, getAllUsers, getUserRole } = require('./users.management.controller');
 const router = express.Router();
 
 // User management
@@ -13,6 +10,7 @@ router.get('/profile', getUserProfile);
 router.put('/profile', updateUserProfile);
 router.put('/role/:userId', verifyFirebaseToken(), updateUserRole); //admin only access
 router.get('/', verifyFirebaseToken(), getAllUsers); //admin or manager can access
+router.get('/get-role/:email', getUserRole);
 
 // get all available meals
 router.get('/meals/available', verifyFirebaseToken(), getAvailableMeals);

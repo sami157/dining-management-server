@@ -117,8 +117,9 @@ getAvailableMeals = async (req, res) => {
 registerMeal = async (req, res) => {
   try {
     const { date, mealType, userId: requestUserId } = req.body;
+    let userId = req.user?._id
     // Allow manager to register for any user, otherwise use authenticated user
-    const userId = new ObjectId(requestUserId) || req.user?._id
+    requestUserId ? userId = new ObjectId(requestUserId) : userId = req.user?._id
     const currentTime = new Date();
 
 
@@ -188,7 +189,6 @@ registerMeal = async (req, res) => {
     };
 
     const result = await mealRegistrations.insertOne(registration);
-
     return res.status(201).json({
       message: 'Meal registered successfully',
       registrationId: result.insertedId,
