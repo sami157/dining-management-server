@@ -11,9 +11,6 @@ router.get('/schedules', getSchedules);
 // Update a single schedule
 router.put('/schedules/:scheduleId', updateSchedule);
 
-// Update Schedules in bulk
-router.patch('/schedules/bulk-update', bulkUpdateSchedules);
-
 // Get all registrations for a date range
 router.get('/registrations', getAllRegistrations);
 

@@ -21,8 +21,6 @@ router.post('/meals/register', verifyFirebaseToken(), registerMeal);
 // cancel a registration
 router.delete('/meals/register/cancel/:registrationId', verifyFirebaseToken(), cancelMealRegistration);
 
-// get registered meals for a user
-router.get('/meals/my-registrations', verifyFirebaseToken(), getMyRegistrations);
 
 // total meals of a user by month
 router.get('/meals/total/:email', verifyFirebaseToken(), getTotalMealsForUser);
