@@ -3,7 +3,7 @@ const { users } = require('../../config/connectMongodb');
 
 const VALID_ROLES = ['admin', 'manager', 'member', 'moderator', 'staff'];
 
-const createUser = async (req, res) => {
+createUser = async (req, res) => {
   try {
     const { name, email, mobile, designation, bank, department } = req.body;
 
@@ -218,7 +218,7 @@ getAllUsers = async (req, res) => {
   }
 };
 
-const getUserRole = async (req, res) => {
+getUserRole = async (req, res) => {
   try {
     const { email } = req.params;
 

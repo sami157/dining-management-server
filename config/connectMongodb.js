@@ -11,6 +11,16 @@ const client = new MongoClient(uri, {
     }
 });
 
+const connectMongoDB = () => {
+    async function run() {
+        try {
+            await client.connect();
+        } finally {
+        }
+    }
+    run().catch(console.dir);
+}
+
 const db = client.db('diningManagementDB');
 const users = db.collection('users')
 const mealSchedules = db.collection('mealSchedules')
@@ -21,16 +31,6 @@ const expenses = db.collection('expenses');
 const memberBalances = db.collection('memberBalances');
 const monthlyFinalization = db.collection('monthlyFinalization');
 
-
-const connectMongoDB = () => {
-    async function run() {
-        try {
-            await client.connect();
-        } finally {
-        }
-    }
-    run().catch(console.dir);
-}
 
 module.exports = {
     connectMongoDB,
