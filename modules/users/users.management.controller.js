@@ -3,7 +3,7 @@ const { users } = require('../../config/connectMongodb');
 
 const VALID_ROLES = ['admin', 'manager', 'member', 'moderator', 'staff'];
 
-createUser = async (req, res) => {
+const createUser = async (req, res) => {
   try {
     const { name, email, mobile, designation, bank, department } = req.body;
 
@@ -53,7 +53,7 @@ createUser = async (req, res) => {
   }
 };
 
-getUserProfile = async (req, res) => {
+const getUserProfile = async (req, res) => {
   try {
     const email = req.user?.email || 'temp'; // From auth middleware
 
@@ -79,7 +79,7 @@ getUserProfile = async (req, res) => {
   }
 };
 
-updateUserProfile = async (req, res) => {
+const updateUserProfile = async (req, res) => {
   try {
     const email = req.user?.email || 'temp';
     const { name, mobile, designation, department } = req.body;
@@ -120,7 +120,7 @@ updateUserProfile = async (req, res) => {
   }
 };
 
-updateUserRole = async (req, res) => {
+const updateUserRole = async (req, res) => {
   try {
     const { userId } = req.params;
     const { role } = req.body;
@@ -178,7 +178,7 @@ updateUserRole = async (req, res) => {
   }
 };
 
-getAllUsers = async (req, res) => {
+const getAllUsers = async (req, res) => {
   try {
     const currentUserRole = req.user?.role // From auth middleware
     // Check if current user is admin or manager
@@ -218,7 +218,7 @@ getAllUsers = async (req, res) => {
   }
 };
 
-getUserRole = async (req, res) => {
+const getUserRole = async (req, res) => {
   try {
     const { email } = req.params;
 

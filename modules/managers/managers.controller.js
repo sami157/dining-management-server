@@ -28,7 +28,7 @@ const getDefaultMeals = (date, isHoliday) => {
   return meals;
 };
 
-generateSchedules = async (req, res) => {
+const generateSchedules = async (req, res) => {
   try {
     const { startDate, endDate } = req.body;
     const managerId = 'temp';
@@ -100,7 +100,7 @@ generateSchedules = async (req, res) => {
   }
 };
 
-getSchedules = async (req, res) => {
+const getSchedules = async (req, res) => {
   try {
     const { startDate, endDate } = req.query;
 
@@ -146,7 +146,7 @@ getSchedules = async (req, res) => {
   }
 };
 
-updateSchedule = async (req, res) => {
+const updateSchedule = async (req, res) => {
   try {
     const { scheduleId } = req.params;
     const { isHoliday, availableMeals } = req.body;
@@ -209,7 +209,7 @@ updateSchedule = async (req, res) => {
   }
 };
 
-bulkUpdateSchedules = async (req, res) => {
+const bulkUpdateSchedules = async (req, res) => {
   try {
     const { schedules } = req.body;
 
@@ -276,7 +276,7 @@ bulkUpdateSchedules = async (req, res) => {
   }
 };
 
-getAllRegistrations = async (req, res) => {
+const getAllRegistrations = async (req, res) => {
   try {
     const { startDate, endDate } = req.query;
 

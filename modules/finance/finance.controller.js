@@ -2,7 +2,7 @@ const { ObjectId } = require('mongodb');
 const { format } = require('date-fns');
 const { deposits, memberBalances, users, expenses, monthlyFinalization } = require('../../config/connectMongodb');
 
-addDeposit = async (req, res) => {
+const addDeposit = async (req, res) => {
   try {
     const { userId, amount, month, depositDate, notes } = req.body;
     const managerId = req.user?._id || 'temp';
@@ -86,7 +86,7 @@ addDeposit = async (req, res) => {
   }
 };
 
-addExpense = async (req, res) => {
+const addExpense = async (req, res) => {
   try {
     const { date, category, amount, description } = req.body;
     const managerId = req.user?._id
@@ -136,7 +136,7 @@ addExpense = async (req, res) => {
   }
 };
 
-getAllBalances = async (req, res) => {
+const getAllBalances = async (req, res) => {
   try {
     // Fetch all member balances
     const balances = await memberBalances.find({}).toArray();
@@ -172,7 +172,7 @@ getAllBalances = async (req, res) => {
 };
 
 // Get balance for a specific user
-getUserBalance = async (req, res) => {
+const getUserBalance = async (req, res) => {
   try {
     const { userId } = req.params;
 
@@ -216,7 +216,7 @@ getUserBalance = async (req, res) => {
   }
 };
 
-finalizeMonth = async (req, res) => {
+const finalizeMonth = async (req, res) => {
   try {
     const { month } = req.body;
     const managerId = req.user?._id || 'temp';
@@ -394,7 +394,7 @@ finalizeMonth = async (req, res) => {
 };
 
 // Get finalization details for a specific month
-getMonthFinalization = async (req, res) => {
+const getMonthFinalization = async (req, res) => {
   try {
     const { month } = req.params;
 
@@ -419,7 +419,7 @@ getMonthFinalization = async (req, res) => {
 };
 
 // Get all finalization history
-getAllFinalizations = async (req, res) => {
+const getAllFinalizations = async (req, res) => {
   try {
     const finalizations = await monthlyFinalization.find({})
       .sort({ month: -1 })
@@ -440,7 +440,7 @@ getAllFinalizations = async (req, res) => {
 
 
 // Get all deposits (with optional filters)
-getAllDeposits = async (req, res) => {
+const getAllDeposits = async (req, res) => {
   try {
     const { month, userId } = req.query;
     
@@ -478,7 +478,7 @@ getAllDeposits = async (req, res) => {
 };
 
 // Update deposit
-updateDeposit = async (req, res) => {
+const updateDeposit = async (req, res) => {
   try {
     const { depositId } = req.params;
     const { amount, month, depositDate, notes } = req.body;
@@ -548,7 +548,7 @@ updateDeposit = async (req, res) => {
 };
 
 // Delete deposit
-deleteDeposit = async (req, res) => {
+const deleteDeposit = async (req, res) => {
   try {
     const { depositId } = req.params;
 
@@ -598,10 +598,8 @@ deleteDeposit = async (req, res) => {
   }
 };
 
-
-
 // Get all expenses (with optional filters)
-getAllExpenses = async (req, res) => {
+const getAllExpenses = async (req, res) => {
   try {
     const { startDate, endDate, category } = req.query;
     
@@ -657,7 +655,7 @@ getAllExpenses = async (req, res) => {
 };
 
 // Update expense
-updateExpense = async (req, res) => {
+const updateExpense = async (req, res) => {
   try {
     const { expenseId } = req.params;
     const { date, category, amount, description } = req.body;
@@ -715,7 +713,7 @@ updateExpense = async (req, res) => {
 };
 
 // Delete expense
-deleteExpense = async (req, res) => {
+const deleteExpense = async (req, res) => {
   try {
     const { expenseId } = req.params;
 

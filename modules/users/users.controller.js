@@ -22,7 +22,7 @@ const calculateDeadline = (mealDate, mealType, customDeadline) => {
   return deadline;
 };
 
-getAvailableMeals = async (req, res) => {
+const getAvailableMeals = async (req, res) => {
   try {
     const { startDate, endDate, month } = req.query;
     const userId = req.user?._id
@@ -114,7 +114,7 @@ getAvailableMeals = async (req, res) => {
   }
 };
 
-registerMeal = async (req, res) => {
+const registerMeal = async (req, res) => {
   try {
     const { date, mealType, userId: requestUserId } = req.body;
     let userId = req.user?._id
@@ -203,7 +203,7 @@ registerMeal = async (req, res) => {
   }
 };
 
-cancelMealRegistration = async (req, res) => {
+const cancelMealRegistration = async (req, res) => {
   try {
     const { registrationId } = req.params;
 
@@ -237,7 +237,7 @@ cancelMealRegistration = async (req, res) => {
   }
 };
 
-getMyRegistrations = async (req, res) => {
+const getMyRegistrations = async (req, res) => {
   try {
     const { startDate, endDate } = req.query;
     const userId = req.user?._id
@@ -274,7 +274,7 @@ getMyRegistrations = async (req, res) => {
   }
 };
 
-getTotalMealsForUser = async (req, res) => {
+const getTotalMealsForUser = async (req, res) => {
   try {
     const { email } = req.params; // User ID
     const { month } = req.query; // Format: YYYY-MM (e.g., "2025-01")

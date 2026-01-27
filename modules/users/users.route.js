@@ -1,6 +1,6 @@
 const express = require('express');
 const verifyFirebaseToken = require('../../middleware/verifyFirebaseToken')
-const { getAvailableMeals, getTotalMealsForUser, cancelMealRegistration, registerMeal,getMyRegistrations } = require('./users.controller');
+const { getAvailableMeals, getTotalMealsForUser, cancelMealRegistration, registerMeal } = require('./users.controller');
 const { createUser, getUserProfile, updateUserProfile, updateUserRole, getAllUsers, getUserRole } = require('./users.management.controller');
 const router = express.Router();
 
