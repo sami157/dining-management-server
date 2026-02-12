@@ -1,6 +1,6 @@
 const { ObjectId } = require('mongodb');
 const { format } = require('date-fns');
-const { deposits, memberBalances, users, expenses, monthlyFinalization } = require('../../config/connectMongodb');
+const { deposits, memberBalances, users, expenses, monthlyFinalization, mealRegistrations, mealSchedules } = require('../../config/connectMongodb');
 
 const addDeposit = async (req, res) => {
   try {
@@ -219,7 +219,7 @@ const getUserBalance = async (req, res) => {
 const finalizeMonth = async (req, res) => {
   try {
     const { month } = req.body;
-    const managerId = req.user?._id || 'temp';
+    const managerId = req.user?._id;
 
     // Validate month format (YYYY-MM)
     const monthRegex = /^\d{4}-(0[1-9]|1[0-2])$/;
@@ -254,7 +254,7 @@ const finalizeMonth = async (req, res) => {
 
     for (const user of allUsers) {
       const registrations = await mealRegistrations.find({
-        userId: user._id.toString(),
+        userId: user._id,
         date: { $gte: startDate, $lte: endDate }
       }).toArray();
 

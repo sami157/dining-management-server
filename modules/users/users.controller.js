@@ -118,8 +118,11 @@ const registerMeal = async (req, res) => {
   try {
     const { date, mealType, userId: requestUserId } = req.body;
     let userId = req.user?._id
+
     // Allow manager to register for any user, otherwise use authenticated user
-    requestUserId ? userId = new ObjectId(requestUserId) : userId = req.user?._id
+    if(requestUserId){
+      userId = new ObjectId(requestUserId)
+    }
     const currentTime = new Date();
 
 

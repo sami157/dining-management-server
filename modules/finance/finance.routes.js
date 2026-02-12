@@ -18,24 +18,24 @@ const {
 } = require('./finance.controller');
 
 // Deposits
-router.post('/deposits/add', addDeposit);
-router.get('/deposits', getAllDeposits);
-router.put('/deposits/:depositId', updateDeposit);
-router.delete('/deposits/:depositId', deleteDeposit);
+router.post('/deposits/add', verifyFirebaseToken(), addDeposit);
+router.get('/deposits', verifyFirebaseToken(), getAllDeposits);
+router.put('/deposits/:depositId', verifyFirebaseToken(), updateDeposit);
+router.delete('/deposits/:depositId', verifyFirebaseToken(), deleteDeposit);
 
 // Expenses
 router.post('/expenses/add', verifyFirebaseToken(), addExpense);
-router.get('/expenses', getAllExpenses);
-router.put('/expenses/:expenseId', updateExpense);
-router.delete('/expenses/:expenseId', deleteExpense);
+router.get('/expenses', verifyFirebaseToken(), getAllExpenses);
+router.put('/expenses/:expenseId', verifyFirebaseToken(), updateExpense);
+router.delete('/expenses/:expenseId', verifyFirebaseToken(), deleteExpense);
 
 // Balances
 router.get('/balances', getAllBalances);
 router.get('/balances/:userId', getUserBalance);
 
 // Finalization
-router.post('/finalize', finalizeMonth);
-router.get('/finalization/:month', getMonthFinalization);
-router.get('/finalizations', getAllFinalizations);
+router.post('/finalize', verifyFirebaseToken(), finalizeMonth);
+router.get('/finalization/:month', verifyFirebaseToken(), getMonthFinalization);
+router.get('/finalizations', verifyFirebaseToken(), getAllFinalizations);
 
 module.exports = router;
