@@ -31,7 +31,7 @@ const getDefaultMeals = (date, isHoliday) => {
 const generateSchedules = async (req, res) => {
   try {
     const { startDate, endDate } = req.body;
-    const managerId = 'temp';
+    const managerId = req.user._id;
 
     if (!startDate || !endDate) {
       return res.status(400).json({ 
