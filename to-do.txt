@@ -1,0 +1,24 @@
+Server:
+1. Prevent deregistering deadline-over meals
+2. Add room number field to user registration
+3. Add fixed deposit field, managed by admin, default is 0
+
+Homepage:
+1. Two-column layout
+2. One column shows the meal sheet for today (user list with meal boxes)
+3. The other column shows meal information for today and tomorrow
+
+User Dashboard:
+1. Historical Data (Monthly deposit, cost, number of meals, balance, deposit, cost trend, cost breakdown etc), Fixed deposit amount
+2. Provision to add multiple meals
+3. Prominent Deposit Reminder
+
+Fund Management:
+1. Add 'Associated Person' info on cost entry (Need Staff role?)
+2. Show the running Meal rate (Depends on offered meals and not registered meals)
+
+Member Management:
+1. Room-wise user list
+
+Visual:
+1. Change blank gray meal boxes to gray outlined
