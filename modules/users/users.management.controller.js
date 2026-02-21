@@ -35,6 +35,7 @@ const createUser = async (req, res) => {
       designation: designation || '',
       department: department || '',
       role: 'member',
+      fixedDeposit: 0,
       createdAt: new Date(),
       updatedAt: new Date()
     };
@@ -84,7 +85,7 @@ const getUserProfile = async (req, res) => {
 const updateUserProfile = async (req, res) => {
   try {
     const email = req.user?.email
-    const { name, building, room, mobile, designation, department } = req.body;
+    const { name, building, room, mobile, designation, department, fixedDeposit } = req.body;
 
     // Build update object with only provided fields
     const updateData = {
@@ -97,6 +98,7 @@ const updateUserProfile = async (req, res) => {
     if (mobile) updateData.mobile = mobile;
     if (designation !== undefined) updateData.designation = designation;
     if (department !== undefined) updateData.department = department;
+    if (deposit) updateData.deposit = deposit;
 
     // Update user
     const result = await users.findOneAndUpdate(
@@ -182,6 +184,57 @@ const updateUserRole = async (req, res) => {
   }
 };
 
+const updateFixedDeposit = async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const { fixedDepositAmount } = req.body;
+    const currentUserRole = req.user?.role // From auth middleware
+
+    // Validate userId
+    if (!ObjectId.isValid(userId)) {
+      return res.status(400).json({
+        error: 'Invalid user ID'
+      });
+    }
+
+    // Validate role
+    if (currentUserRole !== 'admin') {
+      return res.status(400).json({
+        error: 'You are not authorized'
+      });
+    }
+
+    // Update user role
+    const result = await users.findOneAndUpdate(
+      { _id: new ObjectId(userId) },
+      { 
+        $set: { 
+          fixedDeposit,
+          updatedAt: new Date()
+        } 
+      },
+      { returnDocument: 'after' }
+    );
+
+    if (!result) {
+      return res.status(404).json({
+        error: 'User not found'
+      });
+    }
+
+    return res.status(200).json({
+      message: 'Fixed Deposit Amount updated successfully',
+      user: result
+    });
+
+  } catch (error) {
+    console.error('Error updating fixed deposit amount:', error);
+    return res.status(500).json({
+      error: 'Failed to update fixed deposit amount'
+    });
+  }
+};
+
 const getAllUsers = async (req, res) => {
   try {
     const currentUserRole = req.user?.role // From auth middleware
@@ -248,6 +301,7 @@ module.exports = {
   getUserProfile,
   updateUserProfile,
   updateUserRole,
+  updateFixedDeposit,
   getAllUsers,
   getUserRole
 }
