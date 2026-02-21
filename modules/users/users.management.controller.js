@@ -259,7 +259,7 @@ const getAllUsers = async (req, res) => {
 
     // Fetch all users
     const allUsers = await users.find(query)
-      .sort({ createdAt: -1 })
+      .sort({ room: 1 })
       .toArray();
 
     return res.status(200).json({
