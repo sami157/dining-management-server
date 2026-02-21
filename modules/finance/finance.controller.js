@@ -106,7 +106,7 @@ const addExpense = async (req, res) => {
     }
 
     const expenseDate = new Date(date);
-    expenseDate.setHours(12, 0, 0, 0); // Normalize to noon
+    // expenseDate.setHours(0, 0, 0, 0); // Normalize to noon
 
     // Create expense record
     const expense = {
@@ -241,8 +241,8 @@ const finalizeMonth = async (req, res) => {
     const [year, monthNum] = month.split('-').map(Number);
     const startDate = new Date(year, monthNum - 1, 1);
     const endDate = new Date(year, monthNum, 0);
-    startDate.setHours(0, 0, 0, 0);
-    endDate.setHours(23, 59, 59, 999);
+    // startDate.setHours(0, 0, 0, 0);
+    // endDate.setHours(23, 59, 59, 999);
 
     // 1. Get all active users
     const allUsers = await users.find({ isActive: { $ne: false } }).toArray();
@@ -608,8 +608,8 @@ const getAllExpenses = async (req, res) => {
     if (startDate && endDate) {
       const start = new Date(startDate);
       const end = new Date(endDate);
-      start.setHours(0, 0, 0, 0);
-      end.setHours(23, 59, 59, 999);
+      // start.setHours(0, 0, 0, 0);
+      // end.setHours(23, 59, 59, 999);
       query.date = { $gte: start, $lte: end };
     }
     
@@ -687,8 +687,8 @@ const updateExpense = async (req, res) => {
     const updateData = { updatedAt: new Date() };
     if (date !== undefined) {
       const newDate = new Date(date);
-      newDate.setHours(12, 0, 0, 0);
-      updateData.date = newDate;
+      // newDate.setHours(0, 0, 0, 0);
+      // updateData.date = newDate;
     }
     if (category !== undefined) updateData.category = category;
     if (amount !== undefined) updateData.amount = amount;

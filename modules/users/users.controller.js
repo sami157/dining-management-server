@@ -1,5 +1,6 @@
 const { ObjectId } = require('mongodb');
 const { mealSchedules, mealRegistrations, users } = require('../../config/connectMongodb');
+const { DateTime } = require('luxon');
 
 // Default deadline rules
 const MEAL_DEADLINES = {
@@ -15,9 +16,13 @@ const calculateDeadline = (mealDate, mealType, customDeadline) => {
   }
 
   const config = MEAL_DEADLINES[mealType];
-  const deadline = new Date(mealDate);
-  deadline.setDate(deadline.getDate() + config.dayOffset);
-  deadline.setHours(config.hours, 0, 0, 0);
+
+  const deadline = DateTime.fromJSDate(mealDate)
+    .setZone("Asia/Dhaka")
+    .plus({ days: config.dayOffset })
+    .set({ hour: config.hours, minute: 0, second: 0, millisecond: 0 })
+    .toUTC()
+    .toJSDate();
 
   return deadline;
 };
@@ -40,8 +45,8 @@ const getAvailableMeals = async (req, res) => {
       start = new Date(year, monthNum - 1, 1);
       end = new Date(year, monthNum, 0);
       
-      start.setHours(0, 0, 0, 0);
-      end.setHours(23, 59, 59, 999);
+      // start.setHours(0, 0, 0, 0);
+      // end.setHours(23, 59, 59, 999);
     } else {
       if (!startDate || !endDate) {
         return res.status(400).json({
@@ -52,8 +57,8 @@ const getAvailableMeals = async (req, res) => {
       start = new Date(startDate);
       end = new Date(endDate);
 
-      start.setHours(0, 0, 0, 0);
-      end.setHours(23, 59, 59, 999);
+      // start.setHours(0, 0, 0, 0);
+      // end.setHours(23, 59, 59, 999);
     }
 
     // Fetch schedules
@@ -120,10 +125,16 @@ const registerMeal = async (req, res) => {
     let userId = req.user?._id
 
     // Allow manager to register for any user, otherwise use authenticated user
-    if(requestUserId){
-      userId = new ObjectId(requestUserId)
+    if (requestUserId) {
+      if (req.user.role !== 'admin') {
+        return res.status(403).json({
+          error: 'Not authorized to register for others'
+        });
+      }
+      userId = new ObjectId(requestUserId);
     }
-    const currentTime = new Date();
+
+    const currentTime = new Date()
 
 
     // Validate inputs
@@ -140,7 +151,7 @@ const registerMeal = async (req, res) => {
     }
 
     const mealDate = new Date(date);
-    mealDate.setHours(12, 0, 0, 0);
+    // mealDate.setHours(0, 0, 0, 0);
 
     // Check if schedule exists for this date
     const schedule = await mealSchedules.findOne({ date: mealDate });
@@ -209,24 +220,76 @@ const registerMeal = async (req, res) => {
 const cancelMealRegistration = async (req, res) => {
   try {
     const { registrationId } = req.params;
+    const userId = req.user?._id;
 
-    // Validate registrationId
     if (!ObjectId.isValid(registrationId)) {
       return res.status(400).json({
         error: 'Invalid registration ID'
       });
     }
 
-    // Delete the registration (no userId check - allows manager to delete any registration)
-    const result = await mealRegistrations.deleteOne({
+    const user = await users.findOne({ _id: userId });
+
+    const registration = await mealRegistrations.findOne({
       _id: new ObjectId(registrationId)
     });
 
-    if (result.deletedCount === 0) {
+    if (!registration) {
       return res.status(404).json({
         error: 'Registration not found'
       });
     }
+
+    // Admin can cancel anytime (override rule)
+    if (user.role !== 'admin') {
+
+      // Find schedule for that date
+      const schedule = await mealSchedules.findOne({
+        date: registration.date
+      });
+
+      if (!schedule) {
+        return res.status(404).json({
+          error: 'Meal schedule not found'
+        });
+      }
+
+      const meal = schedule.availableMeals.find(
+        m => m.mealType === registration.mealType
+      );
+
+      if (!meal) {
+        return res.status(400).json({
+          error: 'Meal configuration not found'
+        });
+      }
+
+      // Recalculate deadline
+      const deadline = calculateDeadline(
+        registration.date,
+        registration.mealType,
+        meal.customDeadline
+      );
+
+      const currentTime = new Date();
+
+      if (currentTime > deadline) {
+        return res.status(400).json({
+          error: 'Cancellation deadline has passed for this meal'
+        });
+      }
+
+      // Also prevent user from cancelling others' registration
+      if (!registration.userId.equals(userId)) {
+        return res.status(403).json({
+          error: 'You can only cancel your own registration'
+        });
+      }
+    }
+
+    await mealRegistrations.deleteOne({
+      _id: new ObjectId(registrationId)
+    });
 
     return res.status(200).json({
       message: 'Meal registration cancelled successfully'
@@ -239,6 +302,7 @@ const cancelMealRegistration = async (req, res) => {
     });
   }
 };
+
 
 const getMyRegistrations = async (req, res) => {
   try {
@@ -253,8 +317,8 @@ const getMyRegistrations = async (req, res) => {
       const start = new Date(startDate);
       const end = new Date(endDate);
 
-      start.setHours(0, 0, 0, 0);
-      end.setHours(23, 59, 59, 999);
+      // start.setHours(0, 0, 0, 0);
+      // end.setHours(23, 59, 59, 999);
 
       query.date = { $gte: start, $lte: end };
     }
@@ -309,16 +373,16 @@ const getTotalMealsForUser = async (req, res) => {
       start = new Date(year, monthNum - 1, 1);
       end = new Date(year, monthNum, 0); // Last day of month
       
-      start.setHours(0, 0, 0, 0);
-      end.setHours(23, 59, 59, 999);
+      // start.setHours(0, 0, 0, 0);
+      // end.setHours(23, 59, 59, 999);
     } else {
       // If no month provided, calculate for current month
       const now = new Date();
       start = new Date(now.getFullYear(), now.getMonth(), 1);
       end = new Date(now.getFullYear(), now.getMonth() + 1, 0);
       
-      start.setHours(0, 0, 0, 0);
-      end.setHours(23, 59, 59, 999);
+      // start.setHours(0, 0, 0, 0);
+      // end.setHours(23, 59, 59, 999);
     }
 
     // Fetch user's registrations for the month using user._id

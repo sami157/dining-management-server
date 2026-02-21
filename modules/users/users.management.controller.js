@@ -5,7 +5,7 @@ const VALID_ROLES = ['admin', 'manager', 'member', 'moderator', 'staff'];
 
 const createUser = async (req, res) => {
   try {
-    const { name, email, mobile, designation, bank, department } = req.body;
+    const { name, building, room, email, mobile, designation, bank, department } = req.body;
 
     // Validate required fields
     if (!name || !mobile || !email) {
@@ -27,6 +27,8 @@ const createUser = async (req, res) => {
     // Create user
     const newUser = {
       name,
+      building,
+      room,
       email,
       mobile,
       bank,
@@ -55,7 +57,7 @@ const createUser = async (req, res) => {
 
 const getUserProfile = async (req, res) => {
   try {
-    const email = req.user?.email || 'temp'; // From auth middleware
+    const email = req.user?.email
 
     // Find user by Firebase UID
     const user = await users.findOne({ email });
@@ -81,8 +83,8 @@ const getUserProfile = async (req, res) => {
 
 const updateUserProfile = async (req, res) => {
   try {
-    const email = req.user?.email || 'temp';
-    const { name, mobile, designation, department } = req.body;
+    const email = req.user?.email
+    const { name, building, room, mobile, designation, department } = req.body;
 
     // Build update object with only provided fields
     const updateData = {
@@ -90,6 +92,8 @@ const updateUserProfile = async (req, res) => {
     };
 
     if (name) updateData.name = name;
+    if (building) updateData.building = building;
+    if (room) updateData.room = room;
     if (mobile) updateData.mobile = mobile;
     if (designation !== undefined) updateData.designation = designation;
     if (department !== undefined) updateData.department = department;

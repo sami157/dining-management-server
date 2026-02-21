@@ -42,9 +42,9 @@ const generateSchedules = async (req, res) => {
     const start = new Date(startDate);
     const end = new Date(endDate);
     
-    // IMPORTANT: Set to noon to avoid timezone issues
-    start.setHours(12, 0, 0, 0);
-    end.setHours(12, 0, 0, 0);
+    // // IMPORTANT: Set to noon to avoid timezone issues
+    // start.setHours(0, 0, 0, 0);
+    // end.setHours(0, 0, 0, 0);
 
     if (start > end) {
       return res.status(400).json({ 
@@ -57,7 +57,7 @@ const generateSchedules = async (req, res) => {
 
     while (currentDate <= end) {
       const dateToCheck = new Date(currentDate);
-      dateToCheck.setHours(12, 0, 0, 0); // Keep at noon
+      // dateToCheck.setHours(0, 0, 0, 0); // Keep at noon
 
       const existingSchedule = await mealSchedules.findOne({
         date: dateToCheck
@@ -114,8 +114,8 @@ const getSchedules = async (req, res) => {
     const start = new Date(startDate);
     const end = new Date(endDate);
     
-    start.setHours(0, 0, 0, 0);
-    end.setHours(23, 59, 59, 999);
+    // start.setHours(0, 0, 0, 0);
+    // end.setHours(23, 59, 59, 999);
 
     if (start > end) {
       return res.status(400).json({ 
@@ -290,8 +290,8 @@ const getAllRegistrations = async (req, res) => {
     const start = new Date(startDate);
     const end = new Date(endDate);
 
-    start.setHours(0, 0, 0, 0);
-    end.setHours(23, 59, 59, 999);
+    // start.setHours(0, 0, 0, 0);
+    // end.setHours(23, 59, 59, 999);
 
     if (start > end) {
       return res.status(400).json({
