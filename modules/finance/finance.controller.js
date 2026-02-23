@@ -86,6 +86,54 @@ const addDeposit = async (req, res) => {
   }
 };
 
+// Get monthly deposit for a specific user
+const getMonthlyDepositByUserId = async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const { month } = req.query;
+
+    // Find user balance
+    const deposit = await deposits.findOne({ userId, month });
+
+    if (!deposit) {
+      // User exists but no deposits record yet (no deposits)
+      const user = await users.findOne({ _id: new ObjectId(userId) });
+      if (!user) {
+        return res.status(404).json({
+          error: 'User not found'
+        });
+      }
+
+      return res.status(200).json({
+        userId: userId,
+        userName: user.name,
+        email: user.email,
+        month: deposit.month,
+        deposit: 0,
+        lastUpdated: null
+      });
+    }
+
+    // Fetch user details
+    const user = await users.findOne({ _id: new ObjectId(deposit.userId) });
+
+    return res.status(200).json({
+      userId: deposit.userId,
+      userName: user?.name,
+      email: user?.email,
+      month: deposit.month,
+      deposit: deposit.amount,
+      lastUpdated: deposit.depositDate
+    });
+
+  } catch (error) {
+    console.error('Error fetching user balance:', error);
+    return res.status(500).json({
+      error: 'Failed to fetch user balance'
+    });
+  }
+};
+
 const addExpense = async (req, res) => {
   try {
     const { date, category, amount, description, person } = req.body;
@@ -316,8 +364,8 @@ const finalizeMonth = async (req, res) => {
     const [year, monthNum] = month.split('-').map(Number);
     const startDate = new Date(year, monthNum - 1, 1);
     const endDate = new Date(year, monthNum, 0);
-    // startDate.setHours(0, 0, 0, 0);
-    // endDate.setHours(23, 59, 59, 999);
+    startDate.setHours(0, 0, 0, 0);
+    endDate.setHours(23, 59, 59, 999);
 
     // 1. Get all active users
     const allUsers = await users.find({ isActive: { $ne: false } }).toArray();
@@ -397,8 +445,8 @@ const finalizeMonth = async (req, res) => {
       const balanceRecord = await memberBalances.findOne({ userId });
       const previousBalance = balanceRecord?.balance || 0;
 
-      // Calculate new balance
-      const newBalance = previousBalance + totalUserDeposits - mealCost;
+      // Calculate new balance (Deduct mosque fee if applicable)
+      const newBalance = previousBalance + totalUserDeposits - mealCost - (user.mosqueFee || 0);
 
       // Determine status
       let status = 'paid';
@@ -411,6 +459,7 @@ const finalizeMonth = async (req, res) => {
         totalMeals: totalMeals,
         totalDeposits: totalUserDeposits,
         mealCost: mealCost,
+        mosqueFee: user.mosqueFee || 0,
         previousBalance: previousBalance,
         newBalance: newBalance,
         status: status
@@ -527,20 +576,24 @@ const getAllDeposits = async (req, res) => {
       .sort({ depositDate: -1 })
       .toArray();
 
+    let totalDeposit = 0;
+    allDeposits.forEach(dep => totalDeposit += dep.amount);
+
     // Enrich with user details
     const enrichedDeposits = await Promise.all(
       allDeposits.map(async (deposit) => {
         const user = await users.findOne({ _id: new ObjectId(deposit.userId) });
         return {
           ...deposit,
-          userName: user?.name || 'Unknown',
-          userEmail: user?.email || ''
+          userName: user?.name,
+          userEmail: user?.email 
         };
       })
     );
 
     return res.status(200).json({
       count: enrichedDeposits.length,
+      totalDeposit,
       deposits: enrichedDeposits
     });
 
@@ -832,6 +885,7 @@ const deleteExpense = async (req, res) => {
 
 module.exports = {
   addDeposit,
+  getMonthlyDepositByUserId,
   addExpense,
   getAllBalances,
   getUserBalance,

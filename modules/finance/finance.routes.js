@@ -15,12 +15,14 @@ const {
   deleteDeposit,
   getAllExpenses,
   updateExpense,
-  deleteExpense
+  deleteExpense,
+  getMonthlyDepositByUserId
 } = require('./finance.controller');
 
 // Deposits
 router.post('/deposits/add', verifyFirebaseToken(), addDeposit);
 router.get('/deposits', verifyFirebaseToken(), getAllDeposits);
+router.get('/deposits/:userId', verifyFirebaseToken(), getMonthlyDepositByUserId);
 router.put('/deposits/:depositId', verifyFirebaseToken(), updateDeposit);
 router.delete('/deposits/:depositId', verifyFirebaseToken(), deleteDeposit);
 

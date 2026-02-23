@@ -36,6 +36,7 @@ const createUser = async (req, res) => {
       department: department || '',
       role: 'member',
       fixedDeposit: 0,
+      mosqueFee: 0,
       createdAt: new Date(),
       updatedAt: new Date()
     };
@@ -187,7 +188,7 @@ const updateUserRole = async (req, res) => {
 const updateFixedDeposit = async (req, res) => {
   try {
     const { userId } = req.params;
-    const { fixedDepositAmount } = req.body;
+    const { fixedDeposit } = req.body;
     const currentUserRole = req.user?.role // From auth middleware
 
     // Validate userId
@@ -231,6 +232,57 @@ const updateFixedDeposit = async (req, res) => {
     console.error('Error updating fixed deposit amount:', error);
     return res.status(500).json({
       error: 'Failed to update fixed deposit amount'
+    });
+  }
+};
+
+const updateMosqueFee = async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const { mosqueFee } = req.body;
+    const currentUserRole = req.user?.role // From auth middleware
+
+    // Validate userId
+    if (!ObjectId.isValid(userId)) {
+      return res.status(400).json({
+        error: 'Invalid user ID'
+      });
+    }
+
+    // Validate role
+    if (currentUserRole !== 'admin') {
+      return res.status(400).json({
+        error: 'You are not authorized'
+      });
+    }
+
+    // Update user role
+    const result = await users.findOneAndUpdate(
+      { _id: new ObjectId(userId) },
+      { 
+        $set: { 
+          mosqueFee,
+          updatedAt: new Date()
+        } 
+      },
+      { returnDocument: 'after' }
+    );
+
+    if (!result) {
+      return res.status(404).json({
+        error: 'User not found'
+      });
+    }
+
+    return res.status(200).json({
+      message: 'Mosque Fee updated successfully',
+      user: result
+    });
+
+  } catch (error) {
+    console.error('Error updating mosque fee:', error);
+    return res.status(500).json({
+      error: 'Failed to update mosque fee'
     });
   }
 };
@@ -296,6 +348,7 @@ module.exports = {
   updateUserProfile,
   updateUserRole,
   updateFixedDeposit,
+  updateMosqueFee,
   getAllUsers,
   getUserRole
 }
