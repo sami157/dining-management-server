@@ -5,7 +5,7 @@ const { deposits, memberBalances, users, expenses, monthlyFinalization, mealRegi
 const addDeposit = async (req, res) => {
   try {
     const { userId, amount, month, depositDate, notes } = req.body;
-    const managerId = req.user?._id || 'temp';
+    const managerId = req.user?._id;
 
     // Validate required fields
     if (!userId || !amount || !month) {
@@ -89,7 +89,7 @@ const addDeposit = async (req, res) => {
 // Get monthly deposit for a specific user
 const getMonthlyDepositByUserId = async (req, res) => {
   try {
-    const { userId } = req.params;
+    const userId = req.user?._id.toString();
     const { month } = req.query;
 
     // Find user balance
@@ -154,7 +154,6 @@ const addExpense = async (req, res) => {
     }
 
     const expenseDate = new Date(date);
-    // expenseDate.setHours(0, 0, 0, 0); // Normalize to noon
 
     // Create expense record
     const expense = {
@@ -542,6 +541,51 @@ const getMonthFinalization = async (req, res) => {
   }
 };
 
+//Get finalization details for a specific user for a specific month
+const getMyFinalizationData = async (req, res) => {
+  try {
+    console.log('I am here');
+    const userId = req.user?._id.toString();
+    const { month } = req.query;
+    // console.log(userId, month);
+
+    const monthRegex = /^\d{4}-(0[1-9]|1[0-2])$/;
+    if (!month || !monthRegex.test(month)) {
+      return res.status(400).json({ error: 'month must be in YYYY-MM format (e.g., 2025-01)' });
+    }
+
+    const record = await monthlyFinalization.findOne(
+      { month },
+      { projection: { month: 1, finalizedAt: 1, mealRate: 1, totalMealsServed: 1, totalExpenses: 1, memberDetails: 1 } }
+    );
+
+    if (!record) {
+      return res.status(404).json({ error: 'No finalization record found for this month' });
+    }
+
+    const myDetails = record.memberDetails?.find(m => m.userId === userId);
+
+    if (!myDetails) {
+      return res.status(404).json({ error: 'No data found for this user in the specified month' });
+    }
+
+    const result = {
+      month: record.month,
+      finalizedAt: record.finalizedAt,
+      mealRate: record.mealRate,
+      totalMealsServed: record.totalMealsServed,
+      totalExpenses: record.totalExpenses,
+      ...myDetails
+    };
+
+    return res.status(200).json({ finalization: result });
+
+  } catch (error) {
+    console.error('Error fetching user finalization data:', error);
+    return res.status(500).json({ error: 'Failed to fetch finalization data' });
+  }
+};
+
 // Get all finalization history
 const getAllFinalizations = async (req, res) => {
   try {
@@ -736,8 +780,8 @@ const getAllExpenses = async (req, res) => {
     if (startDate && endDate) {
       const start = new Date(startDate);
       const end = new Date(endDate);
-      // start.setHours(0, 0, 0, 0);
-      // end.setHours(23, 59, 59, 999);
+      start.setHours(0, 0, 0, 0);
+      end.setHours(23, 59, 59, 999);
       query.date = { $gte: start, $lte: end };
     }
     
@@ -815,8 +859,8 @@ const updateExpense = async (req, res) => {
     const updateData = { updatedAt: new Date() };
     if (date !== undefined) {
       const newDate = new Date(date);
-      // newDate.setHours(0, 0, 0, 0);
-      // updateData.date = newDate;
+      newDate.setHours(0, 0, 0, 0);
+      updateData.date = newDate;
     }
     if (category !== undefined) updateData.category = category;
     if (amount !== undefined) updateData.amount = amount;
@@ -892,6 +936,7 @@ module.exports = {
   getRunningMealRate,
   finalizeMonth,
   getMonthFinalization,
+  getMyFinalizationData,
   getAllFinalizations,
   getAllDeposits,
   updateDeposit,

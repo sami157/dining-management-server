@@ -16,13 +16,14 @@ const {
   getAllExpenses,
   updateExpense,
   deleteExpense,
-  getMonthlyDepositByUserId
+  getMonthlyDepositByUserId,
+  getMyFinalizationData
 } = require('./finance.controller');
 
 // Deposits
 router.post('/deposits/add', verifyFirebaseToken(), addDeposit);
 router.get('/deposits', verifyFirebaseToken(), getAllDeposits);
-router.get('/deposits/:userId', verifyFirebaseToken(), getMonthlyDepositByUserId);
+router.get('/user-deposit', verifyFirebaseToken(), getMonthlyDepositByUserId);
 router.put('/deposits/:depositId', verifyFirebaseToken(), updateDeposit);
 router.delete('/deposits/:depositId', verifyFirebaseToken(), deleteDeposit);
 
@@ -42,6 +43,7 @@ router.get('/meal-rate', verifyFirebaseToken(), getRunningMealRate);
 // Finalization
 router.post('/finalize', verifyFirebaseToken(), finalizeMonth);
 router.get('/finalization/:month', verifyFirebaseToken(), getMonthFinalization);
+router.get('/user-finalization', verifyFirebaseToken(), getMyFinalizationData);
 router.get('/finalizations', verifyFirebaseToken(), getAllFinalizations);
 
 module.exports = router;
