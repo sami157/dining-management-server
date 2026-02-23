@@ -544,10 +544,8 @@ const getMonthFinalization = async (req, res) => {
 //Get finalization details for a specific user for a specific month
 const getMyFinalizationData = async (req, res) => {
   try {
-    console.log('I am here');
     const userId = req.user?._id.toString();
     const { month } = req.query;
-    // console.log(userId, month);
 
     const monthRegex = /^\d{4}-(0[1-9]|1[0-2])$/;
     if (!month || !monthRegex.test(month)) {
