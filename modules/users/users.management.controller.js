@@ -237,13 +237,7 @@ const updateFixedDeposit = async (req, res) => {
 
 const getAllUsers = async (req, res) => {
   try {
-    const currentUserRole = req.user?.role // From auth middleware
-    // Check if current user is admin or manager
-    if (!['admin', 'manager'].includes(currentUserRole)) {
-      return res.status(403).json({
-        error: 'Only admins and managers can view all users'
-      });
-    }
+    const currentUserRole = req.user?.role
 
     // Optional filters from query params
     const { role, department } = req.query;

@@ -3,7 +3,7 @@ const { generateSchedules, getSchedules, updateSchedule, bulkUpdateSchedules, ge
 const verifyFirebaseToken = require('../../middleware/verifyFirebaseToken');
 const router = express.Router();
 
-// Create leal schedules
+// Create meal schedules
 router.post('/schedules/generate', verifyFirebaseToken(),generateSchedules);
 
 // Get meal schedules

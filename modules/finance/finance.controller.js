@@ -88,7 +88,7 @@ const addDeposit = async (req, res) => {
 
 const addExpense = async (req, res) => {
   try {
-    const { date, category, amount, description } = req.body;
+    const { date, category, amount, description, person } = req.body;
     const managerId = req.user?._id
 
     // Validate required fields
@@ -111,10 +111,11 @@ const addExpense = async (req, res) => {
     // Create expense record
     const expense = {
       date: expenseDate,
-      category: category,
-      amount: amount,
+      category,
+      amount,
       description: description || '',
-      addedBy: managerId,  // Only this - no userId field
+      person: person || '',
+      addedBy: managerId,
       createdAt: new Date(),
       updatedAt: new Date()
     };
@@ -212,6 +213,80 @@ const getUserBalance = async (req, res) => {
     console.error('Error fetching user balance:', error);
     return res.status(500).json({
       error: 'Failed to fetch user balance'
+    });
+  }
+};
+
+const getRunningMealRate = async (req, res) => {
+  try {
+    const { month, date } = req.query;
+
+    // Validate month format (YYYY-MM)
+    const monthRegex = /^\d{4}-(0[1-9]|1[0-2])$/;
+    if (!month || !monthRegex.test(month)) {
+      return res.status(400).json({
+        error: 'month must be in YYYY-MM format (e.g., 2025-01)'
+      });
+    }
+
+    // Validate and parse the target date
+    const targetDate = date ? new Date(date) : new Date();
+    if (isNaN(targetDate.getTime())) {
+      return res.status(400).json({
+        error: 'date must be a valid date string (e.g., 2025-01-15)'
+      });
+    }
+
+    // Calculate date range: start of month up to the target date
+    const [year, monthNum] = month.split('-').map(Number);
+    const startDate = new Date(year, monthNum - 1, 1);
+    const endDate = new Date(targetDate);
+    endDate.setHours(23, 59, 59, 999);
+
+    // 1. Get all active users
+    const allUsers = await users.find({ isActive: { $ne: false } }).toArray();
+
+    // 2. Calculate total weighted meals served up to the target date
+    let totalMealsServed = 0;
+
+    for (const user of allUsers) {
+      const registrations = await mealRegistrations.find({
+        userId: user._id,
+        date: { $gte: startDate, $lte: endDate }
+      }).toArray();
+
+      for (const registration of registrations) {
+        const schedule = await mealSchedules.findOne({ date: registration.date });
+        if (schedule) {
+          const meal = schedule.availableMeals.find(m => m.mealType === registration.mealType);
+          const weight = meal?.weight || 1;
+          totalMealsServed += weight;
+        }
+      }
+    }
+
+    // 3. Calculate total expenses up to the target date
+    const monthExpenses = await expenses.find({
+      date: { $gte: startDate, $lte: endDate }
+    }).toArray();
+
+    const totalExpenses = monthExpenses.reduce((sum, exp) => sum + exp.amount, 0);
+
+    // 4. Calculate meal rate
+    const mealRate = totalMealsServed > 0 ? totalExpenses / totalMealsServed : 0;
+
+    return res.status(200).json({
+      month,
+      asOf: targetDate.toISOString().split('T')[0],
+      totalMealsServed,
+      totalExpenses,
+      mealRate: parseFloat(mealRate.toFixed(2))
+    });
+
+  } catch (error) {
+    console.error('Error calculating running meal rate:', error);
+    return res.status(500).json({
+      error: 'Failed to calculate running meal rate'
     });
   }
 };
@@ -760,6 +835,7 @@ module.exports = {
   addExpense,
   getAllBalances,
   getUserBalance,
+  getRunningMealRate,
   finalizeMonth,
   getMonthFinalization,
   getAllFinalizations,

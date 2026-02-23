@@ -6,6 +6,7 @@ const {
   addExpense, 
   getAllBalances, 
   getUserBalance,
+  getRunningMealRate,
   finalizeMonth,
   getMonthFinalization,
   getAllFinalizations,
@@ -32,6 +33,9 @@ router.delete('/expenses/:expenseId', verifyFirebaseToken(), deleteExpense);
 // Balances
 router.get('/balances', getAllBalances);
 router.get('/balances/:userId', getUserBalance);
+
+//Running Meal Rate
+router.get('/meal-rate', verifyFirebaseToken(), getRunningMealRate);
 
 // Finalization
 router.post('/finalize', verifyFirebaseToken(), finalizeMonth);
