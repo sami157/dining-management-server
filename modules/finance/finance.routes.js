@@ -17,7 +17,8 @@ const {
   updateExpense,
   deleteExpense,
   getMonthlyDepositByUserId,
-  getMyFinalizationData
+  getMyFinalizationData,
+  undoMonthFinalization
 } = require('./finance.controller');
 
 // Deposits
@@ -45,5 +46,6 @@ router.post('/finalize', verifyFirebaseToken(), finalizeMonth);
 router.get('/finalization/:month', verifyFirebaseToken(), getMonthFinalization);
 router.get('/user-finalization', verifyFirebaseToken(), getMyFinalizationData);
 router.get('/finalizations', verifyFirebaseToken(), getAllFinalizations);
+router.delete('/finalization/:month', verifyFirebaseToken(), undoMonthFinalization);
 
 module.exports = router;
