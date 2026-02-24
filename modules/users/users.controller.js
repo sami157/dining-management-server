@@ -32,6 +32,7 @@ const getAvailableMeals = async (req, res) => {
     const { startDate, endDate, month } = req.query;
     const userId = req.user?._id;
     const currentTime = new Date();
+    let start, end;
 
     if (month) {
       const monthRegex = /^\d{4}-(0[1-9]|1[0-2])$/;
@@ -43,13 +44,18 @@ const getAvailableMeals = async (req, res) => {
 
       const [year, monthNum] = month.split('-').map(Number);
       start = new Date(year, monthNum - 1, 1);
-      end = new Date(year, monthNum, 1);
+      end = new Date(year, monthNum, 0); // last day of the month
+      end.setHours(23, 59, 59, 999);
     } else {
       if (!startDate || !endDate) {
         return res.status(400).json({
           error: 'Either month OR both startDate and endDate are required'
         });
       }
+
+      start = new Date(startDate);
+      end = new Date(endDate);
+      end.setHours(23, 59, 59, 999);
     }
 
     // Fetch schedules and user registrations in parallel
@@ -65,8 +71,6 @@ const getAvailableMeals = async (req, res) => {
       registrationMap[key] = reg;
     });
 
-    // Process schedules to add availability info
-    // ... inside the schedules.map loop ...
     const availableMeals = schedules.map(schedule => {
       const meals = schedule.availableMeals.map(meal => {
         const deadline = calculateDeadline(schedule.date, meal.mealType, meal.customDeadline);
@@ -81,9 +85,7 @@ const getAvailableMeals = async (req, res) => {
           menu: meal.menu || '',
           weight: meal.weight || 1,
           deadline: deadline,
-          // CHANGE: canRegister now ONLY depends on availability and time.
-          // This allows the frontend to know the "edit window" is still open.
-          canRegister: meal.isAvailable && !isDeadlinePassed,
+          canRegister: meal.isAvailable && !isDeadlinePassed && !isRegistered,
           isRegistered: isRegistered,
           registrationId: isRegistered ? existingRegistration._id : null,
           numberOfMeals: isRegistered ? existingRegistration.numberOfMeals || 1 : null
