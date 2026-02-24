@@ -108,7 +108,7 @@ const getMonthlyDepositByUserId = async (req, res) => {
         userId: userId,
         userName: user.name,
         email: user.email,
-        month: deposit.month,
+        month,
         deposit: 0,
         lastUpdated: null
       });
@@ -186,24 +186,29 @@ const addExpense = async (req, res) => {
 
 const getAllBalances = async (req, res) => {
   try {
-    // Fetch all member balances
-    const balances = await memberBalances.find({}).toArray();
+    const allBalances = await memberBalances.find({}).toArray();
 
-    // Fetch user details for each balance
-    const enrichedBalances = await Promise.all(
-      balances.map(async (balance) => {
-        const user = await users.findOne({ _id: new ObjectId(balance.userId) });
-        return {
-          userId: balance.userId,
-          userName: user?.name || 'Unknown',
-          email: user?.email || '',
-          balance: balance.balance,
-          lastUpdated: balance.lastUpdated
-        };
-      })
-    );
+    const userIds = allBalances
+      .filter(b => ObjectId.isValid(b.userId))
+      .map(b => new ObjectId(b.userId));
 
-    // Sort by user name
+    const usersList = await users.find({ _id: { $in: userIds } }).toArray();
+    const usersMap = {};
+    for (const user of usersList) {
+      usersMap[user._id.toString()] = user;
+    }
+
+    const enrichedBalances = allBalances.map(balance => {
+      const user = usersMap[balance.userId];
+      return {
+        userId: balance.userId,
+        userName: user?.name || 'Unknown',
+        email: user?.email || '',
+        balance: balance.balance,
+        lastUpdated: balance.lastUpdated
+      };
+    });
+
     enrichedBalances.sort((a, b) => a.userName.localeCompare(b.userName));
 
     return res.status(200).json({
@@ -213,9 +218,7 @@ const getAllBalances = async (req, res) => {
 
   } catch (error) {
     console.error('Error fetching balances:', error);
-    return res.status(500).json({
-      error: 'Failed to fetch balances'
-    });
+    return res.status(500).json({ error: 'Failed to fetch balances' });
   }
 };
 
@@ -290,32 +293,28 @@ const getRunningMealRate = async (req, res) => {
     const endDate = new Date(targetDate);
     endDate.setHours(23, 59, 59, 999);
 
-    // 1. Get all active users
-    const allUsers = await users.find({ isActive: { $ne: false } }).toArray();
+    const [allUsers, allRegistrations, allSchedules, monthExpenses] = await Promise.all([
+      users.find({ isActive: { $ne: false } }).toArray(),
+      mealRegistrations.find({ date: { $gte: startDate, $lte: endDate } }).toArray(),
+      mealSchedules.find({ date: { $gte: startDate, $lte: endDate } }).toArray(),
+      expenses.find({ date: { $gte: startDate, $lte: endDate } }).toArray(),
+    ]);
 
-    // 2. Calculate total weighted meals served up to the target date
-    let totalMealsServed = 0;
-
-    for (const user of allUsers) {
-      const registrations = await mealRegistrations.find({
-        userId: user._id,
-        date: { $gte: startDate, $lte: endDate }
-      }).toArray();
-
-      for (const registration of registrations) {
-        const schedule = await mealSchedules.findOne({ date: registration.date });
-        if (schedule) {
-          const meal = schedule.availableMeals.find(m => m.mealType === registration.mealType);
-          const weight = meal?.weight || 1;
-          totalMealsServed += weight;
-        }
-      }
+    const scheduleMap = {};
+    for (const schedule of allSchedules) {
+      scheduleMap[schedule.date.toISOString()] = schedule;
     }
 
-    // 3. Calculate total expenses up to the target date
-    const monthExpenses = await expenses.find({
-      date: { $gte: startDate, $lte: endDate }
-    }).toArray();
+    let totalMealsServed = 0;
+    for (const reg of allRegistrations) {
+      const schedule = scheduleMap[reg.date.toISOString()];
+      if (schedule) {
+        const meal = schedule.availableMeals.find(m => m.mealType === reg.mealType);
+        const weight = meal?.weight || 1;
+        const numberOfMeals = reg.numberOfMeals || 1;
+        totalMealsServed += numberOfMeals * weight;
+      }
+    }
 
     const totalExpenses = monthExpenses.reduce((sum, exp) => sum + exp.amount, 0);
 
@@ -616,7 +615,9 @@ const finalizeMonth = async (req, res) => {
         const schedule = scheduleMap[reg.date.toISOString()];
         if (schedule) {
           const meal = schedule.availableMeals.find(m => m.mealType === reg.mealType);
-          userTotalMeals += meal?.weight || 1;
+          const weight = meal?.weight || 1;
+          const numberOfMeals = reg.numberOfMeals || 1; // fallback to 1 for old records without this field
+          userTotalMeals += numberOfMeals * weight;
         }
       }
 
@@ -884,29 +885,33 @@ const undoMonthFinalization = async (req, res) => {
 const getAllDeposits = async (req, res) => {
   try {
     const { month, userId } = req.query;
-    
+
     const query = {};
     if (month) query.month = month;
     if (userId) query.userId = userId;
 
-    const allDeposits = await deposits.find(query)
-      .sort({ depositDate: -1 })
-      .toArray();
+    const allDeposits = await deposits.find(query).sort({ depositDate: -1 }).toArray();
+
+    const userIds = [...new Set(allDeposits.map(d => d.userId))]
+      .filter(id => ObjectId.isValid(id))
+      .map(id => new ObjectId(id));
+
+    const usersList = await users.find({ _id: { $in: userIds } }).toArray();
+    const usersMap = {};
+    for (const user of usersList) {
+      usersMap[user._id.toString()] = user;
+    }
 
     let totalDeposit = 0;
-    allDeposits.forEach(dep => totalDeposit += dep.amount);
-
-    // Enrich with user details
-    const enrichedDeposits = await Promise.all(
-      allDeposits.map(async (deposit) => {
-        const user = await users.findOne({ _id: new ObjectId(deposit.userId) });
-        return {
-          ...deposit,
-          userName: user?.name,
-          userEmail: user?.email 
-        };
-      })
-    );
+    const enrichedDeposits = allDeposits.map(deposit => {
+      totalDeposit += deposit.amount;
+      const user = usersMap[deposit.userId];
+      return {
+        ...deposit,
+        userName: user?.name,
+        userEmail: user?.email
+      };
+    });
 
     return res.status(200).json({
       count: enrichedDeposits.length,
@@ -916,9 +921,7 @@ const getAllDeposits = async (req, res) => {
 
   } catch (error) {
     console.error('Error fetching deposits:', error);
-    return res.status(500).json({
-      error: 'Failed to fetch deposits'
-    });
+    return res.status(500).json({ error: 'Failed to fetch deposits' });
   }
 };
 
@@ -1047,9 +1050,8 @@ const deleteDeposit = async (req, res) => {
 const getAllExpenses = async (req, res) => {
   try {
     const { startDate, endDate, category } = req.query;
-    
+
     const query = {};
-    
     if (startDate && endDate) {
       const start = new Date(startDate);
       const end = new Date(endDate);
@@ -1057,34 +1059,23 @@ const getAllExpenses = async (req, res) => {
       end.setHours(23, 59, 59, 999);
       query.date = { $gte: start, $lte: end };
     }
-    
     if (category) query.category = category;
 
-    const allExpenses = await expenses.find(query)
-      .sort({ date: -1 })
-      .toArray();
+    const allExpenses = await expenses.find(query).sort({ date: -1 }).toArray();
 
-    // Enrich with manager details who added it
-    const enrichedExpenses = await Promise.all(
-      allExpenses.map(async (expense) => {
-        let addedByName = 'Unknown';
-        
-        // Check if addedBy is a valid ObjectId
-        if (expense.addedBy && ObjectId.isValid(expense.addedBy)) {
-          try {
-            const manager = await users.findOne({ _id: new ObjectId(expense.addedBy) });
-            addedByName = manager?.name || 'Unknown';
-          } catch (err) {
-            console.error('Error fetching manager:', err);
-          }
-        }
-        
-        return {
-          ...expense,
-          addedByName
-        };
-      })
-    );
+    const managerIds = [...new Set(allExpenses.map(e => e.addedBy?.toString()).filter(id => id && ObjectId.isValid(id)))]
+      .map(id => new ObjectId(id));
+
+    const managersList = await users.find({ _id: { $in: managerIds } }).toArray();
+    const managersMap = {};
+    for (const manager of managersList) {
+      managersMap[manager._id.toString()] = manager;
+    }
+
+    const enrichedExpenses = allExpenses.map(expense => ({
+      ...expense,
+      addedByName: managersMap[expense.addedBy?.toString()]?.name || 'Unknown'
+    }));
 
     return res.status(200).json({
       count: enrichedExpenses.length,
@@ -1093,9 +1084,7 @@ const getAllExpenses = async (req, res) => {
 
   } catch (error) {
     console.error('Error fetching expenses:', error);
-    return res.status(500).json({
-      error: 'Failed to fetch expenses'
-    });
+    return res.status(500).json({ error: 'Failed to fetch expenses' });
   }
 };
 

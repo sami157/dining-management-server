@@ -30,7 +30,7 @@ const calculateDeadline = (mealDate, mealType, customDeadline) => {
 const getAvailableMeals = async (req, res) => {
   try {
     const { startDate, endDate, month } = req.query;
-    const userId = req.user?._id
+    const userId = req.user?._id;
     const currentTime = new Date();
 
     if (month) {
@@ -44,9 +44,6 @@ const getAvailableMeals = async (req, res) => {
       const [year, monthNum] = month.split('-').map(Number);
       start = new Date(year, monthNum - 1, 1);
       end = new Date(year, monthNum, 0);
-      
-      // start.setHours(0, 0, 0, 0);
-      // end.setHours(23, 59, 59, 999);
     } else {
       if (!startDate || !endDate) {
         return res.status(400).json({
@@ -56,21 +53,13 @@ const getAvailableMeals = async (req, res) => {
 
       start = new Date(startDate);
       end = new Date(endDate);
-
-      // start.setHours(0, 0, 0, 0);
-      // end.setHours(23, 59, 59, 999);
     }
 
-    // Fetch schedules
-    const schedules = await mealSchedules.find({
-      date: { $gte: start, $lte: end }
-    }).sort({ date: 1 }).toArray();
-
-    // Fetch user's existing registrations
-    const userRegistrations = await mealRegistrations.find({
-      userId,
-      date: { $gte: start, $lte: end }
-    }).toArray();
+    // Fetch schedules and user registrations in parallel
+    const [schedules, userRegistrations] = await Promise.all([
+      mealSchedules.find({ date: { $gte: start, $lte: end } }).sort({ date: 1 }).toArray(),
+      mealRegistrations.find({ userId, date: { $gte: start, $lte: end } }).toArray()
+    ]);
 
     // Create a map of user's registrations for quick lookup
     const registrationMap = {};
@@ -85,17 +74,19 @@ const getAvailableMeals = async (req, res) => {
         const deadline = calculateDeadline(schedule.date, meal.mealType, meal.customDeadline);
         const isDeadlinePassed = currentTime > deadline;
         const registrationKey = `${schedule.date.toISOString().split('T')[0]}_${meal.mealType}`;
-        const isRegistered = !!registrationMap[registrationKey];
+        const existingRegistration = registrationMap[registrationKey];
+        const isRegistered = !!existingRegistration;
 
         return {
           mealType: meal.mealType,
           isAvailable: meal.isAvailable,
           menu: meal.menu || '',
-          weight: meal.weight || 1, // Add this
+          weight: meal.weight || 1,
           deadline: deadline,
           canRegister: meal.isAvailable && !isDeadlinePassed && !isRegistered,
           isRegistered: isRegistered,
-          registrationId: isRegistered ? registrationMap[registrationKey]._id : null
+          registrationId: isRegistered ? existingRegistration._id : null,
+          numberOfMeals: isRegistered ? existingRegistration.numberOfMeals || 1 : null
         };
       });
 
@@ -121,7 +112,7 @@ const getAvailableMeals = async (req, res) => {
 
 const registerMeal = async (req, res) => {
   try {
-    const { date, mealType, userId: requestUserId } = req.body;
+    const { date, mealType, userId: requestUserId, numberOfMeals } = req.body;
     let userId = req.user?._id
 
     // Allow manager to register for any user, otherwise use authenticated user
@@ -172,13 +163,13 @@ const registerMeal = async (req, res) => {
     }
 
     // Check deadline only if registration requetsed by user
-    if(!requestUserId){
-    const deadline = calculateDeadline(mealDate, mealType, meal.customDeadline);
-    if (currentTime > deadline) {
-      return res.status(400).json({
-        error: 'Registration deadline has passed for this meal'
-      });
-    }
+    if (!requestUserId) {
+      const deadline = calculateDeadline(mealDate, mealType, meal.customDeadline);
+      if (currentTime > deadline) {
+        return res.status(400).json({
+          error: 'Registration deadline has passed for this meal'
+        });
+      }
     }
 
     // Check if user already registered
@@ -199,6 +190,7 @@ const registerMeal = async (req, res) => {
       userId,
       date: mealDate,
       mealType: mealType,
+      numberOfMeals: numberOfMeals || 1,
       registeredAt: new Date()
     };
 
@@ -372,7 +364,7 @@ const getTotalMealsForUser = async (req, res) => {
       const [year, monthNum] = month.split('-').map(Number);
       start = new Date(year, monthNum - 1, 1);
       end = new Date(year, monthNum, 0); // Last day of month
-      
+
       // start.setHours(0, 0, 0, 0);
       // end.setHours(23, 59, 59, 999);
     } else {
@@ -380,7 +372,7 @@ const getTotalMealsForUser = async (req, res) => {
       const now = new Date();
       start = new Date(now.getFullYear(), now.getMonth(), 1);
       end = new Date(now.getFullYear(), now.getMonth() + 1, 0);
-      
+
       // start.setHours(0, 0, 0, 0);
       // end.setHours(23, 59, 59, 999);
     }
@@ -400,17 +392,24 @@ const getTotalMealsForUser = async (req, res) => {
     };
 
     // For each registration, get the meal weight from schedule
-    for (const registration of registrations) {
-      const schedule = await mealSchedules.findOne({
-        date: registration.date
-      });
+    const schedules = await mealSchedules.find({
+      date: { $gte: start, $lte: end }
+    }).toArray();
 
+    const scheduleMap = {};
+    for (const schedule of schedules) {
+      scheduleMap[schedule.date.toISOString()] = schedule;
+    }
+
+    for (const registration of registrations) {
+      const schedule = scheduleMap[registration.date.toISOString()];
       if (schedule) {
         const meal = schedule.availableMeals.find(m => m.mealType === registration.mealType);
         if (meal) {
           const weight = meal.weight || 1;
-          totalMeals += weight;
-          mealBreakdown[registration.mealType] += weight;
+          const numberOfMeals = registration.numberOfMeals || 1;
+          totalMeals += numberOfMeals * weight;
+          mealBreakdown[registration.mealType] += numberOfMeals * weight;
         }
       }
     }
