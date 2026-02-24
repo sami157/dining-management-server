@@ -1,6 +1,6 @@
 const express = require('express');
 const verifyFirebaseToken = require('../../middleware/verifyFirebaseToken')
-const { getAvailableMeals, getTotalMealsForUser, cancelMealRegistration, registerMeal } = require('./users.controller');
+const { getAvailableMeals, getTotalMealsForUser, cancelMealRegistration, registerMeal, updateMealRegistration } = require('./users.controller');
 const { createUser, getUserProfile, updateUserProfile, updateUserRole, getAllUsers, getUserRole, updateFixedDeposit, updateMosqueFee } = require('./users.management.controller');
 const router = express.Router();
 
@@ -19,6 +19,9 @@ router.get('/meals/available', verifyFirebaseToken(), getAvailableMeals);
 
 // register for a meal
 router.post('/meals/register', verifyFirebaseToken(), registerMeal);
+
+// Edit number of meals per registration
+router.patch('/meals/register/:registrationId', verifyFirebaseToken(), updateMealRegistration);
 
 // cancel a registration
 router.delete('/meals/register/cancel/:registrationId', verifyFirebaseToken(), cancelMealRegistration);

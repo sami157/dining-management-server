@@ -43,16 +43,13 @@ const getAvailableMeals = async (req, res) => {
 
       const [year, monthNum] = month.split('-').map(Number);
       start = new Date(year, monthNum - 1, 1);
-      end = new Date(year, monthNum, 0);
+      end = new Date(year, monthNum, 1);
     } else {
       if (!startDate || !endDate) {
         return res.status(400).json({
           error: 'Either month OR both startDate and endDate are required'
         });
       }
-
-      start = new Date(startDate);
-      end = new Date(endDate);
     }
 
     // Fetch schedules and user registrations in parallel
@@ -69,6 +66,7 @@ const getAvailableMeals = async (req, res) => {
     });
 
     // Process schedules to add availability info
+    // ... inside the schedules.map loop ...
     const availableMeals = schedules.map(schedule => {
       const meals = schedule.availableMeals.map(meal => {
         const deadline = calculateDeadline(schedule.date, meal.mealType, meal.customDeadline);
@@ -83,7 +81,9 @@ const getAvailableMeals = async (req, res) => {
           menu: meal.menu || '',
           weight: meal.weight || 1,
           deadline: deadline,
-          canRegister: meal.isAvailable && !isDeadlinePassed && !isRegistered,
+          // CHANGE: canRegister now ONLY depends on availability and time.
+          // This allows the frontend to know the "edit window" is still open.
+          canRegister: meal.isAvailable && !isDeadlinePassed,
           isRegistered: isRegistered,
           registrationId: isRegistered ? existingRegistration._id : null,
           numberOfMeals: isRegistered ? existingRegistration.numberOfMeals || 1 : null
@@ -206,6 +206,73 @@ const registerMeal = async (req, res) => {
     return res.status(500).json({
       error: 'Failed to register meal'
     });
+  }
+};
+
+const updateMealRegistration = async (req, res) => {
+  try {
+    const { registrationId } = req.params;
+    const { numberOfMeals } = req.body;
+    const userId = req.user?._id;
+
+    if (!ObjectId.isValid(registrationId)) {
+      return res.status(400).json({ error: 'Invalid registration ID' });
+    }
+
+    if (!numberOfMeals || typeof numberOfMeals !== 'number' || numberOfMeals < 1) {
+      return res.status(400).json({ error: 'numberOfMeals must be a positive number' });
+    }
+
+    const registration = await mealRegistrations.findOne({
+      _id: new ObjectId(registrationId)
+    });
+
+    if (!registration) {
+      return res.status(404).json({ error: 'Registration not found' });
+    }
+
+    // Prevent updating others' registration unless admin
+    if (!registration.userId.equals(userId) && req.user.role !== 'admin') {
+      return res.status(403).json({ error: 'You can only update your own registration' });
+    }
+
+    // ... inside updateMealRegistration ...
+
+    if (req.user.role !== 'admin') {
+      const schedule = await mealSchedules.findOne({ date: registration.date });
+
+      if (!schedule) {
+        return res.status(404).json({ error: 'Meal schedule not found for this date' });
+      }
+
+      const mealConfig = schedule.availableMeals.find(m => m.mealType === registration.mealType);
+
+      // Check both if meal exists AND if it is currently available/active
+      if (!mealConfig || !mealConfig.isAvailable) {
+        return res.status(400).json({ error: 'Meal is no longer available for modification' });
+      }
+
+      const deadline = calculateDeadline(
+        new Date(registration.date), // Wrap to be safe
+        registration.mealType,
+        null
+      );
+
+      if (new Date() > deadline) {
+        return res.status(400).json({ error: 'Deadline has passed. Changes are no longer allowed.' });
+      }
+    }
+
+    await mealRegistrations.updateOne(
+      { _id: new ObjectId(registrationId) },
+      { $set: { numberOfMeals, updatedAt: new Date() } }
+    );
+
+    return res.status(200).json({ message: 'Registration updated successfully' });
+
+  } catch (error) {
+    console.error('Error updating meal registration:', error);
+    return res.status(500).json({ error: 'Failed to update meal registration' });
   }
 };
 
@@ -436,6 +503,7 @@ const getTotalMealsForUser = async (req, res) => {
 module.exports = {
   getAvailableMeals,
   registerMeal,
+  updateMealRegistration,
   cancelMealRegistration,
   getMyRegistrations,
   getTotalMealsForUser
