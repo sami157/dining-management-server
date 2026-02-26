@@ -455,8 +455,6 @@ const getMonthFinalization = async (req, res) => {
 
 const getMyFinalizationData = async (req, res) => {
   try {
-    console.log('getMyFinalizationData called', req.query);
-    console.log('user:', req.user);
     const userId = req.user?._id.toString();
     const { month } = req.query;
 
