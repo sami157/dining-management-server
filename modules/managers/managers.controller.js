@@ -1,5 +1,5 @@
 const { ObjectId } = require('mongodb');
-const { mealSchedules, mealRegistrations, users } = require('../../config/connectMongodb'); // Adjust path
+const { getCollections } = require('../../config/connectMongodb');
 
 // Helper function to check if a date is weekend (Fri or Sat)
 const isWeekend = (date) => {
@@ -10,7 +10,7 @@ const isWeekend = (date) => {
 // Helper function to get available meals based on day type
 const getDefaultMeals = (date, isHoliday) => {
   const meals = [];
-  
+
   if (isWeekend(date) || isHoliday) {
     meals.push(
       { mealType: 'morning', isAvailable: true, customDeadline: null, weight: 0.5, menu: '' },
@@ -24,7 +24,7 @@ const getDefaultMeals = (date, isHoliday) => {
       { mealType: 'night', isAvailable: true, customDeadline: null, weight: 1, menu: '' }
     );
   }
-  
+
   return meals;
 };
 
@@ -34,46 +34,35 @@ const generateSchedules = async (req, res) => {
     const managerId = req.user._id;
 
     if (!startDate || !endDate) {
-      return res.status(400).json({ 
-        error: 'Start and end dates are required' 
-      });
+      return res.status(400).json({ error: 'Start and end dates are required' });
     }
 
     const start = new Date(startDate);
     const end = new Date(endDate);
-    
-    // // IMPORTANT: Set to noon to avoid timezone issues
-    // start.setHours(0, 0, 0, 0);
-    // end.setHours(0, 0, 0, 0);
 
     if (start > end) {
-      return res.status(400).json({ 
-        error: 'startDate must be before endDate' 
-      });
+      return res.status(400).json({ error: 'startDate must be before endDate' });
     }
+
+    const { mealSchedules } = await getCollections();
 
     const schedulesToCreate = [];
     const currentDate = new Date(start);
 
     while (currentDate <= end) {
       const dateToCheck = new Date(currentDate);
-      // dateToCheck.setHours(0, 0, 0, 0); // Keep at noon
 
-      const existingSchedule = await mealSchedules.findOne({
-        date: dateToCheck
-      });
+      const existingSchedule = await mealSchedules.findOne({ date: dateToCheck });
 
       if (!existingSchedule) {
-        const schedule = {
+        schedulesToCreate.push({
           date: dateToCheck,
           isHoliday: false,
           availableMeals: getDefaultMeals(currentDate, false),
           createdBy: managerId,
           createdAt: new Date(),
           updatedAt: new Date()
-        };
-        
-        schedulesToCreate.push(schedule);
+        });
       }
 
       currentDate.setDate(currentDate.getDate() + 1);
@@ -94,9 +83,7 @@ const generateSchedules = async (req, res) => {
 
   } catch (error) {
     console.error('Error generating schedules:', error);
-    return res.status(500).json({ 
-      error: 'Failed to generate schedules' 
-    });
+    return res.status(500).json({ error: 'Failed to generate schedules' });
   }
 };
 
@@ -104,45 +91,27 @@ const getSchedules = async (req, res) => {
   try {
     const { startDate, endDate } = req.query;
 
-    // Validate inputs
     if (!startDate || !endDate) {
-      return res.status(400).json({ 
-        error: 'startDate and endDate are required' 
-      });
+      return res.status(400).json({ error: 'startDate and endDate are required' });
     }
 
     const start = new Date(startDate);
     const end = new Date(endDate);
-    
-    // start.setHours(0, 0, 0, 0);
-    // end.setHours(23, 59, 59, 999);
 
     if (start > end) {
-      return res.status(400).json({ 
-        error: 'startDate must be before endDate' 
-      });
+      return res.status(400).json({ error: 'startDate must be before endDate' });
     }
 
-    // Fetch schedules within date range
+    const { mealSchedules } = await getCollections();
     const schedules = await mealSchedules.find({
-      date: {
-        $gte: start,
-        $lte: end
-      }
-    })
-    .sort({ date: 1 }) // Sort by date ascending
-    .toArray();
+      date: { $gte: start, $lte: end }
+    }).sort({ date: 1 }).toArray();
 
-    return res.status(200).json({
-      count: schedules.length,
-      schedules: schedules
-    });
+    return res.status(200).json({ count: schedules.length, schedules });
 
   } catch (error) {
     console.error('Error fetching schedules:', error);
-    return res.status(500).json({ 
-      error: 'Failed to fetch schedules' 
-    });
+    return res.status(500).json({ error: 'Failed to fetch schedules' });
   }
 };
 
@@ -152,38 +121,30 @@ const updateSchedule = async (req, res) => {
     const { isHoliday, availableMeals } = req.body;
 
     if (!ObjectId.isValid(scheduleId)) {
-      return res.status(400).json({ 
-        error: 'Invalid schedule ID' 
-      });
+      return res.status(400).json({ error: 'Invalid schedule ID' });
     }
 
     if (availableMeals && !Array.isArray(availableMeals)) {
-      return res.status(400).json({ 
-        error: 'availableMeals must be an array' 
-      });
+      return res.status(400).json({ error: 'availableMeals must be an array' });
     }
 
-    const updateData = {
-      updatedAt: new Date()
-    };
+    const updateData = { updatedAt: new Date() };
 
     if (isHoliday !== undefined) {
       updateData.isHoliday = isHoliday;
     }
 
     if (availableMeals) {
-      // Ensure weight is included when updating
-      const processedMeals = availableMeals.map(meal => ({
+      updateData.availableMeals = availableMeals.map(meal => ({
         mealType: meal.mealType,
         isAvailable: meal.isAvailable,
         customDeadline: meal.customDeadline || null,
-        weight: meal.weight !== undefined ? meal.weight : 1, // Default weight if missing
+        weight: meal.weight !== undefined ? meal.weight : 1,
         menu: meal.menu || ''
       }));
-      
-      updateData.availableMeals = processedMeals;
     }
 
+    const { mealSchedules } = await getCollections();
     const result = await mealSchedules.findOneAndUpdate(
       { _id: new ObjectId(scheduleId) },
       { $set: updateData },
@@ -191,21 +152,14 @@ const updateSchedule = async (req, res) => {
     );
 
     if (!result) {
-      return res.status(404).json({ 
-        error: 'Schedule not found' 
-      });
+      return res.status(404).json({ error: 'Schedule not found' });
     }
 
-    return res.status(200).json({
-      message: 'Schedule updated successfully',
-      schedule: result
-    });
+    return res.status(200).json({ message: 'Schedule updated successfully', schedule: result });
 
   } catch (error) {
     console.error('Error updating schedule:', error);
-    return res.status(500).json({ 
-      error: 'Failed to update schedule' 
-    });
+    return res.status(500).json({ error: 'Failed to update schedule' });
   }
 };
 
@@ -213,40 +167,28 @@ const bulkUpdateSchedules = async (req, res) => {
   try {
     const { schedules } = req.body;
 
-    // Validate input
     if (!schedules || !Array.isArray(schedules) || schedules.length === 0) {
-      return res.status(400).json({ 
-        error: 'schedules array is required and cannot be empty' 
-      });
+      return res.status(400).json({ error: 'schedules array is required and cannot be empty' });
     }
+
+    const { mealSchedules } = await getCollections();
 
     const updatePromises = [];
     const errors = [];
 
-    // Process each schedule update
     for (const schedule of schedules) {
       const { scheduleId, isHoliday, availableMeals } = schedule;
 
-      // Validate scheduleId
       if (!scheduleId || !ObjectId.isValid(scheduleId)) {
         errors.push({ scheduleId, error: 'Invalid schedule ID' });
         continue;
       }
 
-      // Build update object
-      const updateData = {
-        updatedAt: new Date()
-      };
+      const updateData = { updatedAt: new Date() };
 
-      if (isHoliday !== undefined) {
-        updateData.isHoliday = isHoliday;
-      }
+      if (isHoliday !== undefined) updateData.isHoliday = isHoliday;
+      if (availableMeals) updateData.availableMeals = availableMeals;
 
-      if (availableMeals) {
-        updateData.availableMeals = availableMeals;
-      }
-
-      // Add update operation to promises array
       updatePromises.push(
         mealSchedules.updateOne(
           { _id: new ObjectId(scheduleId) },
@@ -255,24 +197,19 @@ const bulkUpdateSchedules = async (req, res) => {
       );
     }
 
-    // Execute all updates
     const results = await Promise.all(updatePromises);
-    
-    // Count successful updates
     const successCount = results.filter(r => r.modifiedCount > 0).length;
 
     return res.status(200).json({
       message: `${successCount} schedules updated successfully`,
-      successCount: successCount,
+      successCount,
       totalAttempted: schedules.length,
       errors: errors.length > 0 ? errors : undefined
     });
 
   } catch (error) {
     console.error('Error bulk updating schedules:', error);
-    return res.status(500).json({ 
-      error: 'Failed to bulk update schedules' 
-    });
+    return res.status(500).json({ error: 'Failed to bulk update schedules' });
   }
 };
 
@@ -280,53 +217,36 @@ const getAllRegistrations = async (req, res) => {
   try {
     const { startDate, endDate } = req.query;
 
-    // Validate inputs
     if (!startDate || !endDate) {
-      return res.status(400).json({
-        error: 'startDate and endDate query parameters are required'
-      });
+      return res.status(400).json({ error: 'startDate and endDate query parameters are required' });
     }
 
     const start = new Date(startDate);
     const end = new Date(endDate);
 
-    // start.setHours(0, 0, 0, 0);
-    // end.setHours(23, 59, 59, 999);
-
     if (start > end) {
-      return res.status(400).json({
-        error: 'startDate must be before endDate'
-      });
+      return res.status(400).json({ error: 'startDate must be before endDate' });
     }
 
-    // Fetch all registrations within date range
-    const registrations = await mealRegistrations.find({
-      date: {
-        $gte: start,
-        $lte: end
-      }
-    })
-    .sort({ date: 1, userId: 1, mealType: 1 })
-    .toArray();
+    const { mealRegistrations, users } = await getCollections();
 
-    // Optional: Populate user details
+    const registrations = await mealRegistrations.find({
+      date: { $gte: start, $lte: end }
+    }).sort({ date: 1, userId: 1, mealType: 1 }).toArray();
+
     const userIds = [...new Set(registrations.map(r => r.userId))];
     const usersMap = {};
-    
+
     if (userIds.length > 0) {
       const usersList = await users.find({
         _id: { $in: userIds.map(id => new ObjectId(id)) }
       }).toArray();
-      
+
       usersList.forEach(user => {
-        usersMap[user._id.toString()] = {
-          name: user.name,
-          email: user.email
-        };
+        usersMap[user._id.toString()] = { name: user.name, email: user.email };
       });
     }
 
-    // Enrich registrations with user info
     const enrichedRegistrations = registrations.map(reg => ({
       ...reg,
       user: usersMap[reg.userId] || null
@@ -341,9 +261,7 @@ const getAllRegistrations = async (req, res) => {
 
   } catch (error) {
     console.error('Error fetching all registrations:', error);
-    return res.status(500).json({
-      error: 'Failed to fetch registrations'
-    });
+    return res.status(500).json({ error: 'Failed to fetch registrations' });
   }
 };
 
@@ -353,4 +271,4 @@ module.exports = {
   updateSchedule,
   bulkUpdateSchedules,
   getAllRegistrations
-}
+};

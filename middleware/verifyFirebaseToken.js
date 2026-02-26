@@ -1,7 +1,7 @@
 const admin = require("firebase-admin");
-const { users } = require("../config/connectMongodb")
+const { getCollections } = require("../config/connectMongodb");
 
-const decoded = Buffer.from(process.env.FB_SERVICE_KEY, 'base64').toString('utf8')
+const decoded = Buffer.from(process.env.FB_SERVICE_KEY, 'base64').toString('utf8');
 const serviceAccount = JSON.parse(decoded);
 
 admin.initializeApp({
@@ -15,13 +15,13 @@ const verifyFirebaseToken = () => {
             const idToken = authHeader?.split(" ")[1];
 
             if (!idToken) {
-                res.json({message: 'Access token is required'})
-                return
+                res.json({ message: 'Access token is required' });
+                return;
             }
 
             const decoded = await admin.auth().verifyIdToken(idToken);
-            const email = decoded.email;
-            const user = await users.findOne({ email });
+            const { users } = await getCollections();
+            const user = await users.findOne({ email: decoded.email });
             req.user = user;
             next();
         } catch (err) {

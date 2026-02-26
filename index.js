@@ -8,9 +8,8 @@ const financeRouter = require('./modules/finance/finance.routes');
 
 const app = express()
 const port = process.env.PORT || 5000
-connectMongoDB()
 
-app.use(cors()); 
+app.use(cors());
 app.use(express.json());
 
 app.use('/managers', managersRouter);
@@ -21,6 +20,8 @@ app.get('/', (req, res) => {
   res.send('Welcome to dining management server')
 })
 
-app.listen(port, () => {
-  // console.log(`Server running on port ${port}`)
+connectMongoDB().then(() => {
+  app.listen(port, () => {
+    // console.log(`Server running on port ${port}`)
+  })
 })

@@ -1,71 +1,54 @@
 const { ObjectId } = require('mongodb');
 const { format } = require('date-fns');
-const { deposits, memberBalances, users, expenses, monthlyFinalization, mealRegistrations, mealSchedules } = require('../../config/connectMongodb');
+const { getCollections } = require('../../config/connectMongodb');
 
 const addDeposit = async (req, res) => {
   try {
     const { userId, amount, month, depositDate, notes } = req.body;
     const managerId = req.user?._id;
 
-    // Validate required fields
     if (!userId || !amount || !month) {
-      return res.status(400).json({
-        error: 'userId, amount, and month are required'
-      });
+      return res.status(400).json({ error: 'userId, amount, and month are required' });
     }
 
-    // Validate amount
     if (typeof amount !== 'number' || amount <= 0) {
-      return res.status(400).json({
-        error: 'amount must be a positive number'
-      });
+      return res.status(400).json({ error: 'amount must be a positive number' });
     }
 
-    // Validate month format (YYYY-MM)
     const monthRegex = /^\d{4}-(0[1-9]|1[0-2])$/;
     if (!monthRegex.test(month)) {
-      return res.status(400).json({
-        error: 'month must be in YYYY-MM format (e.g., 2025-01)'
-      });
+      return res.status(400).json({ error: 'month must be in YYYY-MM format (e.g., 2025-01)' });
     }
 
-    // Check if user exists
+    const { users, deposits, memberBalances } = await getCollections();
+
     const user = await users.findOne({ _id: new ObjectId(userId) });
     if (!user) {
-      return res.status(404).json({
-        error: 'User not found'
-      });
+      return res.status(404).json({ error: 'User not found' });
     }
 
-    // Create deposit record
     const deposit = {
-      userId: userId,  // Member whose account gets credited
-      amount: amount,
-      month: month,
+      userId,
+      amount,
+      month,
       depositDate: depositDate ? new Date(depositDate) : new Date(),
       notes: notes || '',
-      addedBy: managerId,  // Manager who recorded it
+      addedBy: managerId,
       createdAt: new Date()
     };
 
     const result = await deposits.insertOne(deposit);
 
-    // Update member balance
-    const existingBalance = await memberBalances.findOne({ userId: userId });
+    const existingBalance = await memberBalances.findOne({ userId });
 
     if (existingBalance) {
-      // Update existing balance
       await memberBalances.updateOne(
-        { userId: userId },
-        {
-          $inc: { balance: amount },
-          $set: { lastUpdated: new Date() }
-        }
+        { userId },
+        { $inc: { balance: amount }, $set: { lastUpdated: new Date() } }
       );
     } else {
-      // Create new balance record
       await memberBalances.insertOne({
-        userId: userId,
+        userId,
         balance: amount,
         lastUpdated: new Date(),
         createdAt: new Date()
@@ -80,32 +63,27 @@ const addDeposit = async (req, res) => {
 
   } catch (error) {
     console.error('Error adding deposit:', error);
-    return res.status(500).json({
-      error: 'Failed to add deposit'
-    });
+    return res.status(500).json({ error: 'Failed to add deposit' });
   }
 };
 
-// Get monthly deposit for a specific user
 const getMonthlyDepositByUserId = async (req, res) => {
   try {
     const userId = req.user?._id.toString();
     const { month } = req.query;
 
-    // Find user balance
+    const { users, deposits } = await getCollections();
+
     const deposit = await deposits.findOne({ userId, month });
 
     if (!deposit) {
-      // User exists but no deposits record yet (no deposits)
       const user = await users.findOne({ _id: new ObjectId(userId) });
       if (!user) {
-        return res.status(404).json({
-          error: 'User not found'
-        });
+        return res.status(404).json({ error: 'User not found' });
       }
 
       return res.status(200).json({
-        userId: userId,
+        userId,
         userName: user.name,
         email: user.email,
         month,
@@ -114,7 +92,6 @@ const getMonthlyDepositByUserId = async (req, res) => {
       });
     }
 
-    // Fetch user details
     const user = await users.findOne({ _id: new ObjectId(deposit.userId) });
 
     return res.status(200).json({
@@ -128,36 +105,27 @@ const getMonthlyDepositByUserId = async (req, res) => {
 
   } catch (error) {
     console.error('Error fetching user balance:', error);
-    return res.status(500).json({
-      error: 'Failed to fetch user balance'
-    });
+    return res.status(500).json({ error: 'Failed to fetch user balance' });
   }
 };
 
 const addExpense = async (req, res) => {
   try {
     const { date, category, amount, description, person } = req.body;
-    const managerId = req.user?._id
+    const managerId = req.user?._id;
 
-    // Validate required fields
     if (!date || !category || !amount) {
-      return res.status(400).json({
-        error: 'date, category, and amount are required'
-      });
+      return res.status(400).json({ error: 'date, category, and amount are required' });
     }
 
-    // Validate amount
     if (typeof amount !== 'number' || amount <= 0) {
-      return res.status(400).json({
-        error: 'amount must be a positive number'
-      });
+      return res.status(400).json({ error: 'amount must be a positive number' });
     }
 
-    const expenseDate = new Date(date);
+    const { expenses } = await getCollections();
 
-    // Create expense record
     const expense = {
-      date: expenseDate,
+      date: new Date(date),
       category,
       amount,
       description: description || '',
@@ -166,7 +134,6 @@ const addExpense = async (req, res) => {
       createdAt: new Date(),
       updatedAt: new Date()
     };
-
 
     const result = await expenses.insertOne(expense);
 
@@ -178,14 +145,14 @@ const addExpense = async (req, res) => {
 
   } catch (error) {
     console.error('Error adding expense:', error);
-    return res.status(500).json({
-      error: 'Failed to add expense'
-    });
+    return res.status(500).json({ error: 'Failed to add expense' });
   }
 };
 
 const getAllBalances = async (req, res) => {
   try {
+    const { users, memberBalances } = await getCollections();
+
     const allBalances = await memberBalances.find({}).toArray();
 
     const userIds = allBalances
@@ -211,10 +178,7 @@ const getAllBalances = async (req, res) => {
 
     enrichedBalances.sort((a, b) => a.userName.localeCompare(b.userName));
 
-    return res.status(200).json({
-      count: enrichedBalances.length,
-      balances: enrichedBalances
-    });
+    return res.status(200).json({ count: enrichedBalances.length, balances: enrichedBalances });
 
   } catch (error) {
     console.error('Error fetching balances:', error);
@@ -222,25 +186,22 @@ const getAllBalances = async (req, res) => {
   }
 };
 
-// Get balance for a specific user
 const getUserBalance = async (req, res) => {
   try {
     const { userId } = req.params;
 
-    // Find user balance
-    const balance = await memberBalances.findOne({ userId: userId });
+    const { users, memberBalances } = await getCollections();
+
+    const balance = await memberBalances.findOne({ userId });
 
     if (!balance) {
-      // User exists but no balance record yet (no deposits)
       const user = await users.findOne({ _id: new ObjectId(userId) });
       if (!user) {
-        return res.status(404).json({
-          error: 'User not found'
-        });
+        return res.status(404).json({ error: 'User not found' });
       }
 
       return res.status(200).json({
-        userId: userId,
+        userId,
         userName: user.name,
         email: user.email,
         balance: 0,
@@ -248,7 +209,6 @@ const getUserBalance = async (req, res) => {
       });
     }
 
-    // Fetch user details
     const user = await users.findOne({ _id: new ObjectId(balance.userId) });
 
     return res.status(200).json({
@@ -261,9 +221,7 @@ const getUserBalance = async (req, res) => {
 
   } catch (error) {
     console.error('Error fetching user balance:', error);
-    return res.status(500).json({
-      error: 'Failed to fetch user balance'
-    });
+    return res.status(500).json({ error: 'Failed to fetch user balance' });
   }
 };
 
@@ -271,27 +229,22 @@ const getRunningMealRate = async (req, res) => {
   try {
     const { month, date } = req.query;
 
-    // Validate month format (YYYY-MM)
     const monthRegex = /^\d{4}-(0[1-9]|1[0-2])$/;
     if (!month || !monthRegex.test(month)) {
-      return res.status(400).json({
-        error: 'month must be in YYYY-MM format (e.g., 2025-01)'
-      });
+      return res.status(400).json({ error: 'month must be in YYYY-MM format (e.g., 2025-01)' });
     }
 
-    // Validate and parse the target date
     const targetDate = date ? new Date(date) : new Date();
     if (isNaN(targetDate.getTime())) {
-      return res.status(400).json({
-        error: 'date must be a valid date string (e.g., 2025-01-15)'
-      });
+      return res.status(400).json({ error: 'date must be a valid date string (e.g., 2025-01-15)' });
     }
 
-    // Calculate date range: start of month up to the target date
     const [year, monthNum] = month.split('-').map(Number);
     const startDate = new Date(year, monthNum - 1, 1);
     const endDate = new Date(targetDate);
     endDate.setHours(23, 59, 59, 999);
+
+    const { users, mealRegistrations, mealSchedules, expenses } = await getCollections();
 
     const [allUsers, allRegistrations, allSchedules, monthExpenses] = await Promise.all([
       users.find({ isActive: { $ne: false } }).toArray(),
@@ -317,8 +270,6 @@ const getRunningMealRate = async (req, res) => {
     }
 
     const totalExpenses = monthExpenses.reduce((sum, exp) => sum + exp.amount, 0);
-
-    // 4. Calculate meal rate
     const mealRate = totalMealsServed > 0 ? totalExpenses / totalMealsServed : 0;
 
     return res.status(200).json({
@@ -331,223 +282,35 @@ const getRunningMealRate = async (req, res) => {
 
   } catch (error) {
     console.error('Error calculating running meal rate:', error);
-    return res.status(500).json({
-      error: 'Failed to calculate running meal rate'
-    });
+    return res.status(500).json({ error: 'Failed to calculate running meal rate' });
   }
 };
 
-// const finalizeMonth = async (req, res) => {
-//   try {
-//     const { month } = req.body;
-//     const managerId = req.user?._id;
-
-//     // Validate month format (YYYY-MM)
-//     const monthRegex = /^\d{4}-(0[1-9]|1[0-2])$/;
-//     if (!month || !monthRegex.test(month)) {
-//       return res.status(400).json({
-//         error: 'month must be in YYYY-MM format (e.g., 2025-01)'
-//       });
-//     }
-
-//     // Check if month is already finalized
-//     const existingFinalization = await monthlyFinalization.findOne({ month });
-//     if (existingFinalization) {
-//       return res.status(400).json({
-//         error: 'This month has already been finalized'
-//       });
-//     }
-
-//     // Calculate date range for the month
-//     const [year, monthNum] = month.split('-').map(Number);
-//     const startDate = new Date(year, monthNum - 1, 1);
-//     const endDate = new Date(year, monthNum, 0);
-//     startDate.setHours(0, 0, 0, 0);
-//     endDate.setHours(23, 59, 59, 999);
-
-//     // 1. Get all active users
-//     const allUsers = await users.find({ isActive: { $ne: false } }).toArray();
-//     const totalMembers = allUsers.length;
-
-//     // 2. Calculate total meals for each user (with weights)
-//     const userMealsMap = {};
-//     let totalMealsServed = 0;
-
-//     for (const user of allUsers) {
-//       const registrations = await mealRegistrations.find({
-//         userId: user._id,
-//         date: { $gte: startDate, $lte: endDate }
-//       }).toArray();
-
-//       let userTotalMeals = 0;
-
-//       for (const registration of registrations) {
-//         const schedule = await mealSchedules.findOne({ date: registration.date });
-//         if (schedule) {
-//           const meal = schedule.availableMeals.find(m => m.mealType === registration.mealType);
-//           const weight = meal?.weight || 1;
-//           userTotalMeals += weight;
-//         }
-//       }
-
-//       userMealsMap[user._id.toString()] = userTotalMeals;
-//       totalMealsServed += userTotalMeals;
-//     }
-
-//     // 3. Calculate total deposits per user
-//     const userDepositsMap = {};
-//     let totalDeposits = 0;
-
-//     for (const user of allUsers) {
-//       const userDeposits = await deposits.find({
-//         userId: user._id.toString(),
-//         month: month
-//       }).toArray();
-
-//       const userDepositTotal = userDeposits.reduce((sum, dep) => sum + dep.amount, 0);
-//       userDepositsMap[user._id.toString()] = userDepositTotal;
-//       totalDeposits += userDepositTotal;
-//     }
-
-//     // 4. Calculate total expenses
-//     const monthExpenses = await expenses.find({
-//       date: { $gte: startDate, $lte: endDate }
-//     }).toArray();
-
-//     const totalExpenses = monthExpenses.reduce((sum, exp) => sum + exp.amount, 0);
-
-//     // 5. Calculate expense breakdown by category
-//     const expenseBreakdown = {};
-//     monthExpenses.forEach(exp => {
-//       expenseBreakdown[exp.category] = (expenseBreakdown[exp.category] || 0) + exp.amount;
-//     });
-
-//     const expenseBreakdownArray = Object.keys(expenseBreakdown).map(cat => ({
-//       category: cat,
-//       amount: expenseBreakdown[cat]
-//     }));
-
-//     // 6. Calculate meal rate
-//     const mealRate = totalMealsServed > 0 ? totalExpenses / totalMealsServed : 0;
-
-//     // 7. Calculate member-wise details
-//     const memberDetails = [];
-
-//     for (const user of allUsers) {
-//       const userId = user._id.toString();
-//       const totalMeals = userMealsMap[userId] || 0;
-//       const totalUserDeposits = userDepositsMap[userId] || 0;
-//       const mealCost = totalMeals * mealRate;
-
-//       // Get previous balance
-//       const balanceRecord = await memberBalances.findOne({ userId });
-//       const previousBalance = balanceRecord?.balance || 0;
-
-//       // Calculate new balance (Deduct mosque fee if applicable)
-//       const newBalance = previousBalance + totalUserDeposits - mealCost - (user.mosqueFee || 0);
-
-//       // Determine status
-//       let status = 'paid';
-//       if (newBalance < 0) status = 'due';
-//       if (newBalance > 0) status = 'advance';
-
-//       memberDetails.push({
-//         userId: userId,
-//         userName: user.name,
-//         totalMeals: totalMeals,
-//         totalDeposits: totalUserDeposits,
-//         mealCost: mealCost,
-//         mosqueFee: user.mosqueFee || 0,
-//         previousBalance: previousBalance,
-//         newBalance: newBalance,
-//         status: status
-//       });
-
-//       // Update member balance
-//       await memberBalances.updateOne(
-//         { userId },
-//         {
-//           $set: {
-//             balance: newBalance,
-//             lastUpdated: new Date()
-//           }
-//         },
-//         { upsert: true }
-//       );
-//     }
-
-//     // 8. Create finalization record
-//     const finalizationRecord = {
-//       month: month,
-//       finalizedAt: new Date(),
-//       finalizedBy: managerId,
-//       totalMembers: totalMembers,
-//       totalMealsServed: totalMealsServed,
-//       totalDeposits: totalDeposits,
-//       totalExpenses: totalExpenses,
-//       mealRate: mealRate,
-//       memberDetails: memberDetails,
-//       expenseBreakdown: expenseBreakdownArray,
-//       isFinalized: true,
-//       notes: ''
-//     };
-
-//     const result = await monthlyFinalization.insertOne(finalizationRecord);
-
-//     return res.status(201).json({
-//       message: 'Month finalized successfully',
-//       finalizationId: result.insertedId,
-//       summary: {
-//         month,
-//         totalMembers,
-//         totalMealsServed,
-//         totalDeposits,
-//         totalExpenses,
-//         mealRate: parseFloat(mealRate.toFixed(2))
-//       }
-//     });
-
-//   } catch (error) {
-//     console.error('Error finalizing month:', error);
-//     return res.status(500).json({
-//       error: 'Failed to finalize month'
-//     });
-//   }
-// };
-
-// Get finalization details for a specific month
-
-
-// Experimental implementation for faster queries
 const finalizeMonth = async (req, res) => {
   try {
     const { month } = req.body;
     const managerId = req.user?._id;
 
-    // Validate month format (YYYY-MM)
     const monthRegex = /^\d{4}-(0[1-9]|1[0-2])$/;
     if (!month || !monthRegex.test(month)) {
-      return res.status(400).json({
-        error: 'month must be in YYYY-MM format (e.g., 2025-01)'
-      });
+      return res.status(400).json({ error: 'month must be in YYYY-MM format (e.g., 2025-01)' });
     }
 
-    // Check if month is already finalized
+    const {
+      users, mealRegistrations, mealSchedules,
+      deposits, memberBalances, expenses, monthlyFinalization
+    } = await getCollections();
+
     const existingFinalization = await monthlyFinalization.findOne({ month });
     if (existingFinalization) {
-      return res.status(400).json({
-        error: 'This month has already been finalized'
-      });
+      return res.status(400).json({ error: 'This month has already been finalized' });
     }
 
-    // Calculate date range for the month
     const [year, monthNum] = month.split('-').map(Number);
     const startDate = new Date(year, monthNum - 1, 1);
     const endDate = new Date(year, monthNum, 0);
     startDate.setHours(0, 0, 0, 0);
     endDate.setHours(23, 59, 59, 999);
-
-    // Batch fetch everything upfront
 
     const [allUsers, allRegistrations, allSchedules, allDeposits, allBalances, monthExpenses] =
       await Promise.all([
@@ -559,15 +322,11 @@ const finalizeMonth = async (req, res) => {
         expenses.find({ date: { $gte: startDate, $lte: endDate } }).toArray(),
       ]);
 
-    // Build lookup maps for O(1) access
-
-    // scheduleMap: ISO date string -> schedule document
     const scheduleMap = {};
     for (const schedule of allSchedules) {
       scheduleMap[schedule.date.toISOString()] = schedule;
     }
 
-    // registrationsByUser: userId string -> [registrations]
     const registrationsByUser = {};
     for (const reg of allRegistrations) {
       const uid = reg.userId.toString();
@@ -575,20 +334,16 @@ const finalizeMonth = async (req, res) => {
       registrationsByUser[uid].push(reg);
     }
 
-    // depositsByUser: userId string -> total deposit amount
     const depositsByUser = {};
     for (const dep of allDeposits) {
       const uid = dep.userId.toString();
       depositsByUser[uid] = (depositsByUser[uid] || 0) + dep.amount;
     }
 
-    // balanceByUser: userId string -> current balance
     const balanceByUser = {};
     for (const b of allBalances) {
       balanceByUser[b.userId] = b.balance || 0;
     }
-
-    // ── Calculate total expenses & breakdown
 
     const totalExpenses = monthExpenses.reduce((sum, exp) => sum + exp.amount, 0);
 
@@ -596,12 +351,7 @@ const finalizeMonth = async (req, res) => {
     for (const exp of monthExpenses) {
       expenseBreakdown[exp.category] = (expenseBreakdown[exp.category] || 0) + exp.amount;
     }
-    const expenseBreakdownArray = Object.entries(expenseBreakdown).map(([category, amount]) => ({
-      category,
-      amount
-    }));
-
-    // Calculate meals per user 
+    const expenseBreakdownArray = Object.entries(expenseBreakdown).map(([category, amount]) => ({ category, amount }));
 
     const userMealsMap = {};
     let totalMealsServed = 0;
@@ -616,7 +366,7 @@ const finalizeMonth = async (req, res) => {
         if (schedule) {
           const meal = schedule.availableMeals.find(m => m.mealType === reg.mealType);
           const weight = meal?.weight || 1;
-          const numberOfMeals = reg.numberOfMeals || 1; // fallback to 1 for old records without this field
+          const numberOfMeals = reg.numberOfMeals || 1;
           userTotalMeals += numberOfMeals * weight;
         }
       }
@@ -625,15 +375,8 @@ const finalizeMonth = async (req, res) => {
       totalMealsServed += userTotalMeals;
     }
 
-    // Calculate meal rate
-
     const mealRate = totalMealsServed > 0 ? totalExpenses / totalMealsServed : 0;
-
-    // Calculate total deposits
-
     const totalDeposits = Object.values(depositsByUser).reduce((sum, amt) => sum + amt, 0);
-
-    // Build member details
 
     const memberDetails = [];
     const balanceUpdates = [];
@@ -652,17 +395,7 @@ const finalizeMonth = async (req, res) => {
       if (newBalance < 0) status = 'due';
       if (newBalance > 0) status = 'advance';
 
-      memberDetails.push({
-        userId,
-        userName: user.name,
-        totalMeals,
-        totalDeposits: totalUserDeposits,
-        mealCost,
-        mosqueFee,
-        previousBalance,
-        newBalance,
-        status
-      });
+      memberDetails.push({ userId, userName: user.name, totalMeals, totalDeposits: totalUserDeposits, mealCost, mosqueFee, previousBalance, newBalance, status });
 
       balanceUpdates.push({
         updateOne: {
@@ -673,27 +406,15 @@ const finalizeMonth = async (req, res) => {
       });
     }
 
-    // ── Batch update all balances in one DB call
-
     if (balanceUpdates.length > 0) {
       await memberBalances.bulkWrite(balanceUpdates);
     }
 
-    // Insert finalization record
-
     const finalizationRecord = {
-      month,
-      finalizedAt: now,
-      finalizedBy: managerId,
-      totalMembers: allUsers.length,
-      totalMealsServed,
-      totalDeposits,
-      totalExpenses,
-      mealRate,
-      memberDetails,
-      expenseBreakdown: expenseBreakdownArray,
-      isFinalized: true,
-      notes: ''
+      month, finalizedAt: now, finalizedBy: managerId,
+      totalMembers: allUsers.length, totalMealsServed, totalDeposits,
+      totalExpenses, mealRate, memberDetails,
+      expenseBreakdown: expenseBreakdownArray, isFinalized: true, notes: ''
     };
 
     const result = await monthlyFinalization.insertOne(finalizationRecord);
@@ -702,12 +423,8 @@ const finalizeMonth = async (req, res) => {
       message: 'Month finalized successfully',
       finalizationId: result.insertedId,
       summary: {
-        month,
-        totalMembers: allUsers.length,
-        totalMealsServed,
-        totalDeposits,
-        totalExpenses,
-        mealRate: parseFloat(mealRate.toFixed(2))
+        month, totalMembers: allUsers.length, totalMealsServed,
+        totalDeposits, totalExpenses, mealRate: parseFloat(mealRate.toFixed(2))
       }
     });
 
@@ -721,29 +438,25 @@ const getMonthFinalization = async (req, res) => {
   try {
     const { month } = req.params;
 
+    const { monthlyFinalization } = await getCollections();
     const finalization = await monthlyFinalization.findOne({ month });
 
     if (!finalization) {
-      return res.status(404).json({
-        error: 'Finalization not found for this month'
-      });
+      return res.status(404).json({ error: 'Finalization not found for this month' });
     }
 
-    return res.status(200).json({
-      finalization
-    });
+    return res.status(200).json({ finalization });
 
   } catch (error) {
     console.error('Error fetching finalization:', error);
-    return res.status(500).json({
-      error: 'Failed to fetch finalization'
-    });
+    return res.status(500).json({ error: 'Failed to fetch finalization' });
   }
 };
 
-//Get finalization details for a specific user for a specific month
 const getMyFinalizationData = async (req, res) => {
   try {
+    console.log('getMyFinalizationData called', req.query);
+    console.log('user:', req.user);
     const userId = req.user?._id.toString();
     const { month } = req.query;
 
@@ -751,6 +464,8 @@ const getMyFinalizationData = async (req, res) => {
     if (!month || !monthRegex.test(month)) {
       return res.status(400).json({ error: 'month must be in YYYY-MM format (e.g., 2025-01)' });
     }
+
+    const { monthlyFinalization } = await getCollections();
 
     const record = await monthlyFinalization.findOne(
       { month },
@@ -767,16 +482,13 @@ const getMyFinalizationData = async (req, res) => {
       return res.status(404).json({ error: 'No data found for this user in the specified month' });
     }
 
-    const result = {
-      month: record.month,
-      finalizedAt: record.finalizedAt,
-      mealRate: record.mealRate,
-      totalMealsServed: record.totalMealsServed,
-      totalExpenses: record.totalExpenses,
-      ...myDetails
-    };
-
-    return res.status(200).json({ finalization: result });
+    return res.status(200).json({
+      finalization: {
+        month: record.month, finalizedAt: record.finalizedAt,
+        mealRate: record.mealRate, totalMealsServed: record.totalMealsServed,
+        totalExpenses: record.totalExpenses, ...myDetails
+      }
+    });
 
   } catch (error) {
     console.error('Error fetching user finalization data:', error);
@@ -784,23 +496,16 @@ const getMyFinalizationData = async (req, res) => {
   }
 };
 
-// Get all finalization history
 const getAllFinalizations = async (req, res) => {
   try {
-    const finalizations = await monthlyFinalization.find({})
-      .sort({ month: -1 })
-      .toArray();
+    const { monthlyFinalization } = await getCollections();
+    const finalizations = await monthlyFinalization.find({}).sort({ month: -1 }).toArray();
 
-    return res.status(200).json({
-      count: finalizations.length,
-      finalizations: finalizations
-    });
+    return res.status(200).json({ count: finalizations.length, finalizations });
 
   } catch (error) {
     console.error('Error fetching finalizations:', error);
-    return res.status(500).json({
-      error: 'Failed to fetch finalizations'
-    });
+    return res.status(500).json({ error: 'Failed to fetch finalizations' });
   }
 };
 
@@ -808,55 +513,35 @@ const undoMonthFinalization = async (req, res) => {
   try {
     const { month } = req.params;
 
-    // Validate month format
     const monthRegex = /^\d{4}-(0[1-9]|1[0-2])$/;
     if (!month || !monthRegex.test(month)) {
-      return res.status(400).json({
-        error: 'month must be in YYYY-MM format (e.g., 2025-01)'
-      });
+      return res.status(400).json({ error: 'month must be in YYYY-MM format (e.g., 2025-01)' });
     }
 
-    // Find the finalization record
+    const { memberBalances, monthlyFinalization } = await getCollections();
+
     const finalizationRecord = await monthlyFinalization.findOne({ month });
     if (!finalizationRecord) {
-      return res.status(404).json({
-        error: 'No finalization record found for this month'
-      });
+      return res.status(404).json({ error: 'No finalization record found for this month' });
     }
 
-    // Guard: check if any later month has been finalized 
-
     const [year, monthNum] = month.split('-').map(Number);
+    const nextMonthDate = new Date(year, monthNum, 1);
+    const nextMonthStr = `${nextMonthDate.getFullYear()}-${String(nextMonthDate.getMonth() + 1).padStart(2, '0')}`;
 
-    // Build the next month string to use as a minimum comparison
-    const nextMonthDate = new Date(year, monthNum, 1); // first day of next month
-    const nextYear = nextMonthDate.getFullYear();
-    const nextMonth = String(nextMonthDate.getMonth() + 1).padStart(2, '0');
-    const nextMonthStr = `${nextYear}-${nextMonth}`;
-
-    const laterFinalization = await monthlyFinalization.findOne({
-      month: { $gte: nextMonthStr }
-    });
-
+    const laterFinalization = await monthlyFinalization.findOne({ month: { $gte: nextMonthStr } });
     if (laterFinalization) {
       return res.status(400).json({
         error: `Cannot undo finalization for ${month} because ${laterFinalization.month} has already been finalized. You must undo that month first.`
       });
     }
 
-    // Restore all member balances to previousBalance
-
     const { memberDetails } = finalizationRecord;
 
     const balanceRestores = memberDetails.map(member => ({
       updateOne: {
         filter: { userId: member.userId },
-        update: {
-          $set: {
-            balance: member.previousBalance,
-            lastUpdated: new Date()
-          }
-        },
+        update: { $set: { balance: member.previousBalance, lastUpdated: new Date() } },
         upsert: true
       }
     }));
@@ -864,8 +549,6 @@ const undoMonthFinalization = async (req, res) => {
     if (balanceRestores.length > 0) {
       await memberBalances.bulkWrite(balanceRestores);
     }
-
-    // Delete the finalization record
 
     await monthlyFinalization.deleteOne({ month });
 
@@ -880,8 +563,6 @@ const undoMonthFinalization = async (req, res) => {
   }
 };
 
-
-// Get all deposits (with optional filters)
 const getAllDeposits = async (req, res) => {
   try {
     const { month, userId } = req.query;
@@ -889,6 +570,8 @@ const getAllDeposits = async (req, res) => {
     const query = {};
     if (month) query.month = month;
     if (userId) query.userId = userId;
+
+    const { users, deposits } = await getCollections();
 
     const allDeposits = await deposits.find(query).sort({ depositDate: -1 }).toArray();
 
@@ -906,18 +589,10 @@ const getAllDeposits = async (req, res) => {
     const enrichedDeposits = allDeposits.map(deposit => {
       totalDeposit += deposit.amount;
       const user = usersMap[deposit.userId];
-      return {
-        ...deposit,
-        userName: user?.name,
-        userEmail: user?.email
-      };
+      return { ...deposit, userName: user?.name, userEmail: user?.email };
     });
 
-    return res.status(200).json({
-      count: enrichedDeposits.length,
-      totalDeposit,
-      deposits: enrichedDeposits
-    });
+    return res.status(200).json({ count: enrichedDeposits.length, totalDeposit, deposits: enrichedDeposits });
 
   } catch (error) {
     console.error('Error fetching deposits:', error);
@@ -925,33 +600,26 @@ const getAllDeposits = async (req, res) => {
   }
 };
 
-// Update deposit
 const updateDeposit = async (req, res) => {
   try {
     const { depositId } = req.params;
     const { amount, month, depositDate, notes } = req.body;
 
     if (!ObjectId.isValid(depositId)) {
-      return res.status(400).json({
-        error: 'Invalid deposit ID'
-      });
+      return res.status(400).json({ error: 'Invalid deposit ID' });
     }
 
-    // Find existing deposit
+    const { deposits, memberBalances, monthlyFinalization } = await getCollections();
+
     const existingDeposit = await deposits.findOne({ _id: new ObjectId(depositId) });
     if (!existingDeposit) {
-      return res.status(404).json({
-        error: 'Deposit not found'
-      });
+      return res.status(404).json({ error: 'Deposit not found' });
     }
 
-    // Check if month is finalized
     if (month && month !== existingDeposit.month) {
       const finalized = await monthlyFinalization.findOne({ month: existingDeposit.month });
       if (finalized) {
-        return res.status(400).json({
-          error: 'Cannot update deposit - month is already finalized'
-        });
+        return res.status(400).json({ error: 'Cannot update deposit - month is already finalized' });
       }
     }
 
@@ -959,94 +627,64 @@ const updateDeposit = async (req, res) => {
     const newAmount = amount !== undefined ? amount : oldAmount;
     const amountDifference = newAmount - oldAmount;
 
-    // Build update object
     const updateData = { updatedAt: new Date() };
     if (amount !== undefined) updateData.amount = amount;
     if (month !== undefined) updateData.month = month;
     if (depositDate !== undefined) updateData.depositDate = new Date(depositDate);
     if (notes !== undefined) updateData.notes = notes;
 
-    // Update deposit
-    await deposits.updateOne(
-      { _id: new ObjectId(depositId) },
-      { $set: updateData }
-    );
+    await deposits.updateOne({ _id: new ObjectId(depositId) }, { $set: updateData });
 
-    // Update member balance if amount changed
     if (amountDifference !== 0) {
       await memberBalances.updateOne(
         { userId: existingDeposit.userId },
-        {
-          $inc: { balance: amountDifference },
-          $set: { lastUpdated: new Date() }
-        }
+        { $inc: { balance: amountDifference }, $set: { lastUpdated: new Date() } }
       );
     }
 
-    return res.status(200).json({
-      message: 'Deposit updated successfully'
-    });
+    return res.status(200).json({ message: 'Deposit updated successfully' });
 
   } catch (error) {
     console.error('Error updating deposit:', error);
-    return res.status(500).json({
-      error: 'Failed to update deposit'
-    });
+    return res.status(500).json({ error: 'Failed to update deposit' });
   }
 };
 
-// Delete deposit
 const deleteDeposit = async (req, res) => {
   try {
     const { depositId } = req.params;
 
     if (!ObjectId.isValid(depositId)) {
-      return res.status(400).json({
-        error: 'Invalid deposit ID'
-      });
+      return res.status(400).json({ error: 'Invalid deposit ID' });
     }
 
-    // Find existing deposit
+    const { deposits, memberBalances, monthlyFinalization } = await getCollections();
+
     const existingDeposit = await deposits.findOne({ _id: new ObjectId(depositId) });
     if (!existingDeposit) {
-      return res.status(404).json({
-        error: 'Deposit not found'
-      });
+      return res.status(404).json({ error: 'Deposit not found' });
     }
 
-    // Check if month is finalized
     const finalized = await monthlyFinalization.findOne({ month: existingDeposit.month });
     if (finalized) {
-      return res.status(400).json({
-        error: 'Cannot delete deposit - month is already finalized'
-      });
+      return res.status(400).json({ error: 'Cannot delete deposit - month is already finalized' });
     }
 
-    // Delete deposit
     await deposits.deleteOne({ _id: new ObjectId(depositId) });
 
-    // Update member balance (subtract the amount)
     await memberBalances.updateOne(
       { userId: existingDeposit.userId },
-      {
-        $inc: { balance: -existingDeposit.amount },
-        $set: { lastUpdated: new Date() }
-      }
+      { $inc: { balance: -existingDeposit.amount }, $set: { lastUpdated: new Date() } }
     );
 
-    return res.status(200).json({
-      message: 'Deposit deleted successfully'
-    });
+    return res.status(200).json({ message: 'Deposit deleted successfully' });
 
   } catch (error) {
     console.error('Error deleting deposit:', error);
-    return res.status(500).json({
-      error: 'Failed to delete deposit'
-    });
+    return res.status(500).json({ error: 'Failed to delete deposit' });
   }
 };
 
-// Get all expenses (with optional filters)
 const getAllExpenses = async (req, res) => {
   try {
     const { startDate, endDate, category } = req.query;
@@ -1060,6 +698,8 @@ const getAllExpenses = async (req, res) => {
       query.date = { $gte: start, $lte: end };
     }
     if (category) query.category = category;
+
+    const { users, expenses } = await getCollections();
 
     const allExpenses = await expenses.find(query).sort({ date: -1 }).toArray();
 
@@ -1077,10 +717,7 @@ const getAllExpenses = async (req, res) => {
       addedByName: managersMap[expense.addedBy?.toString()]?.name || 'Unknown'
     }));
 
-    return res.status(200).json({
-      count: enrichedExpenses.length,
-      expenses: enrichedExpenses
-    });
+    return res.status(200).json({ count: enrichedExpenses.length, expenses: enrichedExpenses });
 
   } catch (error) {
     console.error('Error fetching expenses:', error);
@@ -1088,36 +725,28 @@ const getAllExpenses = async (req, res) => {
   }
 };
 
-// Update expense
 const updateExpense = async (req, res) => {
   try {
     const { expenseId } = req.params;
     const { date, category, amount, description } = req.body;
 
     if (!ObjectId.isValid(expenseId)) {
-      return res.status(400).json({
-        error: 'Invalid expense ID'
-      });
+      return res.status(400).json({ error: 'Invalid expense ID' });
     }
 
-    // Find existing expense
+    const { expenses, monthlyFinalization } = await getCollections();
+
     const existingExpense = await expenses.findOne({ _id: new ObjectId(expenseId) });
     if (!existingExpense) {
-      return res.status(404).json({
-        error: 'Expense not found'
-      });
+      return res.status(404).json({ error: 'Expense not found' });
     }
 
-    // Check if the expense's month is finalized
     const expenseMonth = format(existingExpense.date, 'yyyy-MM');
     const finalized = await monthlyFinalization.findOne({ month: expenseMonth });
     if (finalized) {
-      return res.status(400).json({
-        error: 'Cannot update expense - month is already finalized'
-      });
+      return res.status(400).json({ error: 'Cannot update expense - month is already finalized' });
     }
 
-    // Build update object
     const updateData = { updatedAt: new Date() };
     if (date !== undefined) {
       const newDate = new Date(date);
@@ -1128,64 +757,44 @@ const updateExpense = async (req, res) => {
     if (amount !== undefined) updateData.amount = amount;
     if (description !== undefined) updateData.description = description;
 
-    // Update expense
-    await expenses.updateOne(
-      { _id: new ObjectId(expenseId) },
-      { $set: updateData }
-    );
+    await expenses.updateOne({ _id: new ObjectId(expenseId) }, { $set: updateData });
 
-    return res.status(200).json({
-      message: 'Expense updated successfully'
-    });
+    return res.status(200).json({ message: 'Expense updated successfully' });
 
   } catch (error) {
     console.error('Error updating expense:', error);
-    return res.status(500).json({
-      error: 'Failed to update expense'
-    });
+    return res.status(500).json({ error: 'Failed to update expense' });
   }
 };
 
-// Delete expense
 const deleteExpense = async (req, res) => {
   try {
     const { expenseId } = req.params;
 
     if (!ObjectId.isValid(expenseId)) {
-      return res.status(400).json({
-        error: 'Invalid expense ID'
-      });
+      return res.status(400).json({ error: 'Invalid expense ID' });
     }
 
-    // Find existing expense
+    const { expenses, monthlyFinalization } = await getCollections();
+
     const existingExpense = await expenses.findOne({ _id: new ObjectId(expenseId) });
     if (!existingExpense) {
-      return res.status(404).json({
-        error: 'Expense not found'
-      });
+      return res.status(404).json({ error: 'Expense not found' });
     }
 
-    // Check if the expense's month is finalized
     const expenseMonth = format(existingExpense.date, 'yyyy-MM');
     const finalized = await monthlyFinalization.findOne({ month: expenseMonth });
     if (finalized) {
-      return res.status(400).json({
-        error: 'Cannot delete expense - month is already finalized'
-      });
+      return res.status(400).json({ error: 'Cannot delete expense - month is already finalized' });
     }
 
-    // Delete expense
     await expenses.deleteOne({ _id: new ObjectId(expenseId) });
 
-    return res.status(200).json({
-      message: 'Expense deleted successfully'
-    });
+    return res.status(200).json({ message: 'Expense deleted successfully' });
 
   } catch (error) {
     console.error('Error deleting expense:', error);
-    return res.status(500).json({
-      error: 'Failed to delete expense'
-    });
+    return res.status(500).json({ error: 'Failed to delete expense' });
   }
 };
 
@@ -1207,4 +816,4 @@ module.exports = {
   getAllExpenses,
   updateExpense,
   deleteExpense
-}
+};
