@@ -5,8 +5,8 @@ const { DateTime } = require('luxon');
 // Default deadline rules
 const MEAL_DEADLINES = {
   morning: { hours: 22, dayOffset: -1 }, // Previous day 10 PM
-  evening: { hours: 10, dayOffset: 0 },  // Same day 10 AM
-  night: { hours: 15, dayOffset: 0 }     // Same day 3 PM
+  evening: { hours: 14, dayOffset: 0 },  // Iftar: Same day 2 PM
+  night: { hours: 14, dayOffset: 0 }     // Night: Same day 2 PM
 };
 
 // Helper function to calculate deadline for a meal
