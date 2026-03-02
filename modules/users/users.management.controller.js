@@ -208,8 +208,12 @@ const getAllUsers = async (req, res) => {
 
     const { users } = await getCollections();
     const allUsers = await users.find(query).sort({ room: 1 }).toArray();
+    let totalFixedDeposit = 0
+    allUsers.forEach(user => {
+      totalFixedDeposit+=user.fixedDeposit
+    });
 
-    return res.status(200).json({ count: allUsers.length, users: allUsers });
+    return res.status(200).json({ count: allUsers.length, users: allUsers, totalFixedDeposit });
 
   } catch (error) {
     console.error('Error fetching all users:', error);
