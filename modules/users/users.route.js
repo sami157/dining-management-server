@@ -6,8 +6,8 @@ const router = express.Router();
 
 // User management
 router.post('/create', createUser);
-router.get('/profile', getUserProfile);
-router.put('/profile', updateUserProfile);
+router.get('/profile', verifyFirebaseToken(), getUserProfile);
+router.put('/profile', verifyFirebaseToken(), updateUserProfile);
 router.put('/role/:userId', verifyFirebaseToken(), updateUserRole); //admin only access
 router.put('/fixedDeposit/:userId', verifyFirebaseToken(), updateFixedDeposit); //admin only access
 router.put('/mosqueFee/:userId', verifyFirebaseToken(), updateMosqueFee); //admin only access
