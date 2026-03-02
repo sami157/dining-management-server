@@ -33,28 +33,52 @@ const generateSchedules = async (req, res) => {
     const { startDate, endDate } = req.body;
     const managerId = req.user._id;
 
+    if (!managerId) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+
     if (!startDate || !endDate) {
       return res.status(400).json({ error: 'Start and end dates are required' });
     }
 
-    const start = new Date(startDate);
-    const end = new Date(endDate);
+    const start = new Date(startDate + 'T00:00:00.000Z');
+    const end = new Date(endDate + 'T00:00:00.000Z');
+
+    if (isNaN(start) || isNaN(end)) {
+      return res.status(400).json({ error: 'Invalid date format' });
+    }
 
     if (start > end) {
       return res.status(400).json({ error: 'startDate must be before endDate' });
     }
 
-    const { mealSchedules } = await getCollections();
+    const diffDays = (end - start) / (1000 * 60 * 60 * 24);
+    if (diffDays > 90) {
+      return res.status(400).json({ error: 'Date range cannot exceed 90 days' });
+    }
+
+    const { mealSchedules, mealRegistrations, users } = await getCollections();
+
+    // Fetch existing schedules and default users in parallel
+    const [existingSchedules, defaultUsers] = await Promise.all([
+      mealSchedules.find(
+        { date: { $gte: start, $lte: end } },
+        { projection: { date: 1 } }
+      ).toArray(),
+      users.find(
+        { mealDefault: true },
+        { projection: { _id: 1 } }
+      ).toArray()
+    ]);
+
+    const existingDates = new Set(existingSchedules.map(s => s.date.getTime()));
 
     const schedulesToCreate = [];
     const currentDate = new Date(start);
 
     while (currentDate <= end) {
       const dateToCheck = new Date(currentDate);
-
-      const existingSchedule = await mealSchedules.findOne({ date: dateToCheck });
-
-      if (!existingSchedule) {
+      if (!existingDates.has(dateToCheck.getTime())) {
         schedulesToCreate.push({
           date: dateToCheck,
           isHoliday: false,
@@ -64,22 +88,50 @@ const generateSchedules = async (req, res) => {
           updatedAt: new Date()
         });
       }
-
       currentDate.setDate(currentDate.getDate() + 1);
     }
 
-    if (schedulesToCreate.length > 0) {
-      const result = await mealSchedules.insertMany(schedulesToCreate);
-      return res.status(201).json({
-        message: `${result.insertedCount} schedules created successfully`,
-        count: result.insertedCount
-      });
-    } else {
+    if (schedulesToCreate.length === 0) {
       return res.status(200).json({
         message: 'All schedules already exist for this date range',
         count: 0
       });
     }
+
+    const result = await mealSchedules.insertMany(schedulesToCreate);
+
+    // Auto-register default users for each new schedule
+    if (defaultUsers.length > 0) {
+      const registrations = [];
+
+      for (const schedule of schedulesToCreate) {
+        const availableMealTypes = schedule.availableMeals
+          .filter(meal => meal.isAvailable)
+          .map(meal => meal.mealType);
+
+        for (const user of defaultUsers) {
+          for (const mealType of availableMealTypes) {
+            registrations.push({
+              userId: user._id,
+              date: schedule.date,
+              mealType,
+              numberOfMeals: 1,
+              registeredAt: new Date()
+            });
+          }
+        }
+      }
+
+      if (registrations.length > 0) {
+        await mealRegistrations.insertMany(registrations);
+      }
+    }
+
+    return res.status(201).json({
+      message: `${result.insertedCount} schedules created successfully`,
+      count: result.insertedCount,
+      registrationsCreated: defaultUsers.length * schedulesToCreate.length
+    });
 
   } catch (error) {
     console.error('Error generating schedules:', error);
@@ -139,7 +191,7 @@ const updateSchedule = async (req, res) => {
         mealType: meal.mealType,
         isAvailable: meal.isAvailable,
         customDeadline: meal.customDeadline || null,
-        weight: meal.weight !== undefined ? meal.weight : 1,
+        weight: meal.isAvailable ? (meal.weight !== undefined ? meal.weight : 1) : 0,
         menu: meal.menu || ''
       }));
     }
@@ -155,7 +207,19 @@ const updateSchedule = async (req, res) => {
       return res.status(404).json({ error: 'Schedule not found' });
     }
 
-    return res.status(200).json({ message: 'Schedule updated successfully', schedule: result });
+    const unavailableMealTypes = result.availableMeals
+      .filter(meal => !meal.isAvailable)
+      .map(meal => meal.mealType);
+
+    if (unavailableMealTypes.length > 0) {
+      const { mealRegistrations } = await getCollections();
+      await mealRegistrations.deleteMany({
+        date: result.date,
+        mealType: { $in: unavailableMealTypes }
+      });
+    }
+
+    return res.status(200).json({ message: 'Schedule and registrations updated successfully', schedule: result });
 
   } catch (error) {
     console.error('Error updating schedule:', error);
@@ -210,6 +274,39 @@ const bulkUpdateSchedules = async (req, res) => {
   } catch (error) {
     console.error('Error bulk updating schedules:', error);
     return res.status(500).json({ error: 'Failed to bulk update schedules' });
+  }
+};
+
+const deleteSchedule = async (req, res) => {
+  try {
+    const { scheduleId } = req.params;
+
+    if (!ObjectId.isValid(scheduleId)) {
+      return res.status(400).json({ error: 'Invalid schedule ID' });
+    }
+
+    const { mealSchedules, mealRegistrations } = await getCollections();
+
+    const schedule = await mealSchedules.findOneAndDelete({
+      _id: new ObjectId(scheduleId)
+    });
+
+    if (!schedule) {
+      return res.status(404).json({ error: 'Schedule not found' });
+    }
+
+    const { deletedCount } = await mealRegistrations.deleteMany({
+      date: schedule.date
+    });
+
+    return res.status(200).json({
+      message: 'Schedule deleted successfully',
+      registrationsCleared: deletedCount
+    });
+
+  } catch (error) {
+    console.error('Error deleting schedule:', error);
+    return res.status(500).json({ error: 'Failed to delete schedule' });
   }
 };
 
@@ -270,5 +367,6 @@ module.exports = {
   getSchedules,
   updateSchedule,
   bulkUpdateSchedules,
-  getAllRegistrations
+  getAllRegistrations,
+  deleteSchedule
 };
