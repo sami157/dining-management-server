@@ -370,11 +370,86 @@ const getTotalMealsForUser = async (req, res) => {
   }
 };
 
+const bulkToggleMealsForUser = async (req, res) => {
+  try {
+    const userId = req.user?._id;
+    const { month } = req.query; // format: "2026-03"
+
+    if (!month) {
+      return res.status(400).json({ error: 'month is required (format: YYYY-MM)' });
+    }
+
+    const [year, monthIndex] = month.split('-').map(Number);
+    const monthStart = new Date(Date.UTC(year, monthIndex - 1, 1));
+    const monthEnd = new Date(Date.UTC(year, monthIndex, 0, 23, 59, 59, 999));
+
+    const currentTime = new Date();
+    const { mealSchedules, mealRegistrations } = await getCollections();
+
+    // Fetch all non-holiday schedules and existing user registrations for the month in parallel
+    const [schedules, existingRegistrations] = await Promise.all([
+      mealSchedules.find({
+        date: { $gte: monthStart, $lte: monthEnd },
+      }).toArray(),
+      mealRegistrations.find({
+        userId,
+        date: { $gte: monthStart, $lte: monthEnd },
+      }).toArray(),
+    ]);
+
+    // Build a set of already-registered (date + mealType) pairs
+    const registeredSet = new Set(
+      existingRegistrations.map(r => `${r.date.toISOString()}_${r.mealType}`)
+    );
+
+    const toInsert = [];
+
+    for (const schedule of schedules) {
+      for (const meal of schedule.availableMeals) {
+        if (!meal.isAvailable) continue;
+
+        const key = `${schedule.date.toISOString()}_${meal.mealType}`;
+        if (registeredSet.has(key)) continue;
+
+        const deadline = calculateDeadline(schedule.date, meal.mealType, meal.customDeadline);
+        if (currentTime > deadline) continue;
+
+        toInsert.push({
+          userId,
+          date: schedule.date,
+          mealType: meal.mealType,
+          numberOfMeals: 1,
+          registeredAt: new Date(),
+        });
+      }
+    }
+
+    if (toInsert.length === 0) {
+      return res.status(200).json({
+        message: 'No available meals to register for',
+        registeredCount: 0,
+      });
+    }
+
+    await mealRegistrations.insertMany(toInsert);
+
+    return res.status(201).json({
+      message: `Successfully registered for ${toInsert.length} meals`,
+      registeredCount: toInsert.length,
+    });
+
+  } catch (error) {
+    console.error('Error in bulk toggling:', error);
+    return res.status(500).json({ error: 'Failed to toggle meals' });
+  }
+};
+
 module.exports = {
   getAvailableMeals,
   registerMeal,
   updateMealRegistration,
   cancelMealRegistration,
   getMyRegistrations,
-  getTotalMealsForUser
+  getTotalMealsForUser,
+  bulkToggleMealsForUser
 };
