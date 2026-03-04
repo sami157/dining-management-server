@@ -726,7 +726,7 @@ const getAllExpenses = async (req, res) => {
 const updateExpense = async (req, res) => {
   try {
     const { expenseId } = req.params;
-    const { date, category, amount, description } = req.body;
+    const { date, category, amount, description, person } = req.body;
 
     if (!ObjectId.isValid(expenseId)) {
       return res.status(400).json({ error: 'Invalid expense ID' });
@@ -754,6 +754,7 @@ const updateExpense = async (req, res) => {
     if (category !== undefined) updateData.category = category;
     if (amount !== undefined) updateData.amount = amount;
     if (description !== undefined) updateData.description = description;
+    if (person !== undefined) updateData.person = person;
 
     await expenses.updateOne({ _id: new ObjectId(expenseId) }, { $set: updateData });
 
