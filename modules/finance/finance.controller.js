@@ -74,33 +74,23 @@ const getMonthlyDepositByUserId = async (req, res) => {
 
     const { users, deposits } = await getCollections();
 
-    const deposit = await deposits.findOne({ userId, month });
+    const [aggregation] = await deposits.aggregate([
+      { $match: { userId, month } },
+      { $group: { _id: null, total: { $sum: "$amount" }, lastUpdated: { $max: "$depositDate" } } }
+    ]).toArray();
 
-    if (!deposit) {
-      const user = await users.findOne({ _id: new ObjectId(userId) });
-      if (!user) {
-        return res.status(404).json({ error: 'User not found' });
-      }
-
-      return res.status(200).json({
-        userId,
-        userName: user.name,
-        email: user.email,
-        month,
-        deposit: 0,
-        lastUpdated: null
-      });
+    const user = await users.findOne({ _id: new ObjectId(userId) });
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
     }
 
-    const user = await users.findOne({ _id: new ObjectId(deposit.userId) });
-
     return res.status(200).json({
-      userId: deposit.userId,
-      userName: user?.name,
-      email: user?.email,
-      month: deposit.month,
-      deposit: deposit.amount,
-      lastUpdated: deposit.depositDate
+      userId,
+      userName: user.name,
+      email: user.email,
+      month,
+      deposit: aggregation?.total ?? 0,
+      lastUpdated: aggregation?.lastUpdated ?? null
     });
 
   } catch (error) {
