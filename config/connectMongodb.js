@@ -37,6 +37,7 @@ const getCollections = async () => {
         expenses: db.collection('expenses'),
         memberBalances: db.collection('memberBalances'),
         monthlyFinalization: db.collection('monthlyFinalization'),
+        systemLogs: db.collection('systemLogs'),
     };
 };
 

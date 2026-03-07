@@ -101,6 +101,7 @@ const registerMeal = async (req, res) => {
   try {
     const { date, mealType, userId: requestUserId, numberOfMeals } = req.body;
     let userId = req.user?._id;
+    let isLateRegistration = false
     const currentTime = new Date();
 
     if (requestUserId) {
@@ -120,7 +121,7 @@ const registerMeal = async (req, res) => {
 
     const mealDate = new Date(date);
 
-    const { mealSchedules, mealRegistrations } = await getCollections();
+    const { mealSchedules, mealRegistrations, users, systemLogs } = await getCollections();
 
     const schedule = await mealSchedules.findOne({ date: mealDate });
     if (!schedule) {
@@ -153,6 +154,33 @@ const registerMeal = async (req, res) => {
     };
 
     const result = await mealRegistrations.insertOne(registration);
+
+    const byPerson = await users.findOne(
+      { _id: new ObjectId(req.user?._id) },
+      { projection: { name: 1 } }
+    );
+
+    const forPerson = await users.findOne(
+      { _id: userId },
+      { projection: { name: 1 } }
+    );
+
+    if (requestUserId) {
+      const deadline = calculateDeadline(mealDate, mealType, meal.customDeadline);
+      if (currentTime > deadline) {
+        isLateRegistration = true
+      }
+    }
+
+    if (isLateRegistration) {
+      const log = {
+        type: 'meal-on',
+        byPerson,
+        forPerson,
+        registration,
+      }
+      await systemLogs.insertOne(log)
+    }
 
     return res.status(201).json({
       message: 'Meal registered successfully',
@@ -230,7 +258,7 @@ const cancelMealRegistration = async (req, res) => {
       return res.status(400).json({ error: 'Invalid registration ID' });
     }
 
-    const { users, mealRegistrations, mealSchedules } = await getCollections();
+    const { users, mealRegistrations, mealSchedules, systemLogs } = await getCollections();
 
     const user = await users.findOne({ _id: userId });
 
@@ -260,7 +288,29 @@ const cancelMealRegistration = async (req, res) => {
       }
     }
 
+    const byPerson = await users.findOne(
+      { _id: new ObjectId(req.user?._id) },
+      { projection: { name: 1 } }
+    );
+
+    const forPerson = await users.findOne(
+      { _id: registration.userId },
+      { projection: { name: 1 } }
+    );
+
     await mealRegistrations.deleteOne({ _id: new ObjectId(registrationId) });
+
+    if (!registration.userId.equals(userId)) {
+      const log = {
+        type: 'meal-off',
+        byPerson,
+        forPerson,
+        mealDate: registration.mealDate,
+        mealType: registration.mealType,
+        cancelledAt: new Date()
+      }
+      await systemLogs.insertOne(log)
+    }
 
     return res.status(200).json({ message: 'Meal registration cancelled successfully' });
 
