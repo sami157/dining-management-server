@@ -298,8 +298,6 @@ const cancelMealRegistration = async (req, res) => {
       { projection: { name: 1 } }
     );
 
-    await mealRegistrations.deleteOne({ _id: new ObjectId(registrationId) });
-
     if (!registration.userId.equals(userId)) {
       const log = {
         type: 'meal-off',
@@ -311,6 +309,8 @@ const cancelMealRegistration = async (req, res) => {
       }
       await systemLogs.insertOne(log)
     }
+
+    await mealRegistrations.deleteOne({ _id: new ObjectId(registrationId) });
 
     return res.status(200).json({ message: 'Meal registration cancelled successfully' });
 
