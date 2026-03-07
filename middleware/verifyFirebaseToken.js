@@ -8,20 +8,26 @@ admin.initializeApp({
     credential: admin.credential.cert(serviceAccount)
 });
 
-const verifyFirebaseToken = () => {
+const verifyFirebaseToken = (isProteted = false) => {
     return async (req, res, next) => {
         try {
             const authHeader = req.headers.authorization;
             const idToken = authHeader?.split(" ")[1];
 
             if (!idToken) {
-                res.json({ message: 'Access token is required' });
+                res.status(403).json({ message: "User not found" });
                 return;
             }
 
             const decoded = await admin.auth().verifyIdToken(idToken);
             const { users } = await getCollections();
             const user = await users.findOne({ email: decoded.email });
+
+            if (isProteted && user.role!=='admin'){
+                res.status(403).json({ message: "Only Admins can access this content" });
+                return;
+            }
+
             req.user = user;
             next();
         } catch (err) {

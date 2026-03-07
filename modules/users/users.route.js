@@ -29,7 +29,6 @@ router.patch('/meals/register/:registrationId', verifyFirebaseToken(), updateMea
 // cancel a registration
 router.delete('/meals/register/cancel/:registrationId', verifyFirebaseToken(), cancelMealRegistration);
 
-
 // total meals of a user by month
 router.get('/meals/total/:email', verifyFirebaseToken(), getTotalMealsForUser);
 
