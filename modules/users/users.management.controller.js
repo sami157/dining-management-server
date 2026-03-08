@@ -210,7 +210,7 @@ const getAllUsers = async (req, res) => {
     const allUsers = await users.find(query).sort({ room: 1 }).toArray();
     let totalFixedDeposit = 0
     allUsers.forEach(user => {
-      totalFixedDeposit+=user.fixedDeposit
+      totalFixedDeposit += user.fixedDeposit
     });
 
     return res.status(200).json({ count: allUsers.length, users: allUsers, totalFixedDeposit });
@@ -244,6 +244,20 @@ const getUserRole = async (req, res) => {
   }
 };
 
+const checkUserWithEmail = async (req, res) => {
+  const { email } = req.params
+  if (!email) {
+    return res.status(400).json({ message: 'Email is required' });
+  }
+
+  const { users } = await getCollections();
+  const user = await users.findOne({ email });
+  if (!user) {
+    return res.status(200).json({ doesExist: false });
+  }
+  return res.status(200).json({ doesExist: true });
+}
+
 module.exports = {
   createUser,
   getUserProfile,
@@ -252,5 +266,6 @@ module.exports = {
   updateFixedDeposit,
   updateMosqueFee,
   getAllUsers,
-  getUserRole
+  getUserRole,
+  checkUserWithEmail
 };
