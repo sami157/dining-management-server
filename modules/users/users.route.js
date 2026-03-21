@@ -11,7 +11,7 @@ router.put('/profile', verifyFirebaseToken(), updateUserProfile);
 router.put('/role/:userId', verifyFirebaseToken(), updateUserRole); //admin only access
 router.put('/fixedDeposit/:userId', verifyFirebaseToken(), updateFixedDeposit); //admin only access
 router.put('/mosqueFee/:userId', verifyFirebaseToken(), updateMosqueFee); //admin only access
-router.get('/', verifyFirebaseToken(), getAllUsers); //admin or manager can access
+router.get('/', getAllUsers); //admin or manager can access
 router.get('/get-role/:email', getUserRole);
 router.get('/check-user/:email', checkUserWithEmail)
 
