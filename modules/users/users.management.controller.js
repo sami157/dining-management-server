@@ -1,7 +1,7 @@
 const { ObjectId } = require('mongodb');
 const { getCollections } = require('../../config/connectMongodb');
 
-const VALID_ROLES = ['admin', 'manager', 'member', 'moderator', 'staff'];
+const VALID_ROLES = ['admin', 'manager', 'member', 'moderator', 'staff', 'super_admin'];
 
 const createUser = async (req, res) => {
   try {
@@ -142,7 +142,7 @@ const updateFixedDeposit = async (req, res) => {
       return res.status(400).json({ error: 'Invalid user ID' });
     }
 
-    if (currentUserRole !== 'admin') {
+    if (currentUserRole !== 'admin' && currentUserRole !== 'super_admin') {
       return res.status(403).json({ error: 'You are not authorized' });
     }
 
@@ -175,7 +175,7 @@ const updateMosqueFee = async (req, res) => {
       return res.status(400).json({ error: 'Invalid user ID' });
     }
 
-    if (currentUserRole !== 'admin') {
+    if (currentUserRole !== 'admin' && currentUserRole !== 'super_admin') {
       return res.status(403).json({ error: 'You are not authorized' });
     }
 

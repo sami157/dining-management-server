@@ -105,7 +105,7 @@ const registerMeal = async (req, res) => {
     const currentTime = new Date();
 
     if (requestUserId) {
-      if (req.user.role !== 'admin') {
+      if (req.user.role !== 'admin' && req.user.role !== 'super_admin') {
         return res.status(403).json({ error: 'Not authorized to register for others' });
       }
       userId = new ObjectId(requestUserId);
@@ -215,7 +215,7 @@ const updateMealRegistration = async (req, res) => {
       return res.status(404).json({ error: 'Registration not found' });
     }
 
-    if (!registration.userId.equals(userId) && req.user.role !== 'admin') {
+    if (!registration.userId.equals(userId) && req.user.role !== 'admin' && req.user.role !== 'super_admin') {
       return res.status(403).json({ error: 'You can only update your own registration' });
     }
 
@@ -267,7 +267,7 @@ const cancelMealRegistration = async (req, res) => {
       return res.status(404).json({ error: 'Registration not found' });
     }
 
-    if (user.role !== 'admin') {
+    if (user.role !== 'admin' && user.role !== 'super_admin') {
       const schedule = await mealSchedules.findOne({ date: registration.date });
       if (!schedule) {
         return res.status(404).json({ error: 'Meal schedule not found' });

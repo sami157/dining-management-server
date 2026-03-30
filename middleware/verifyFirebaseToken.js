@@ -23,7 +23,7 @@ const verifyFirebaseToken = (isProteted = false) => {
             const { users } = await getCollections();
             const user = await users.findOne({ email: decoded.email });
 
-            if (isProteted && user.role!=='admin'){
+            if (isProteted && (user.role!=='admin' && user.role !== 'super_admin')){
                 res.status(403).json({ message: "Only Admins can access this content" });
                 return;
             }
