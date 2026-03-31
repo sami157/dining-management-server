@@ -215,6 +215,44 @@ const getUserBalance = async (req, res) => {
   }
 };
 
+const getMyBalance = async (req, res) => {
+  try {
+    const userId = req.user._id.toString();
+
+    const { users, memberBalances } = await getCollections();
+
+    const balance = await memberBalances.findOne({ userId });
+
+    if (!balance) {
+      const user = await users.findOne({ _id: userId });
+      if (!user) {
+        return res.status(404).json({ error: 'User not found' });
+      }
+
+      return res.status(200).json({
+        userId,
+        userName: user.name,
+        email: user.email,
+        balance: 0,
+        lastUpdated: null
+      });
+    }
+
+    const user = await users.findOne({ _id: new ObjectId(balance.userId) });
+
+    return res.status(200).json({
+      userName: user?.name || 'Unknown',
+      email: user?.email || 'N/A',
+      balance: balance.balance.toFixed(2),
+      lastUpdated: balance.lastUpdated
+    });
+
+  } catch (error) {
+    console.error('Error fetching user balance:', error);
+    return res.status(500).json({ error: 'Failed to fetch user balance' });
+  }
+};
+
 const getRunningMealRate = async (req, res) => {
   try {
     const { month, date } = req.query;
@@ -802,6 +840,7 @@ module.exports = {
   addExpense,
   getAllBalances,
   getUserBalance,
+  getMyBalance,
   getRunningMealRate,
   finalizeMonth,
   getMonthFinalization,

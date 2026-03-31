@@ -18,7 +18,8 @@ const {
   deleteExpense,
   getMonthlyDepositByUserId,
   getMyFinalizationData,
-  undoMonthFinalization
+  undoMonthFinalization,
+  getMyBalance
 } = require('./finance.controller');
 
 // Deposits
@@ -37,6 +38,7 @@ router.delete('/expenses/:expenseId', verifyFirebaseToken(true), deleteExpense);
 // Balances
 router.get('/balances', getAllBalances);
 router.get('/balances/:userId', getUserBalance);
+router.get('/my-balance', verifyFirebaseToken(), getMyBalance);
 
 //Running Meal Rate
 router.get('/meal-rate', verifyFirebaseToken(), getRunningMealRate);
