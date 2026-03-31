@@ -260,7 +260,9 @@ const getRunningMealRate = async (req, res) => {
     }
 
     const totalExpenses = monthExpenses.reduce((sum, exp) => sum + exp.amount, 0);
-    const mealRate = totalMealsServed > 0 ? totalExpenses / totalMealsServed : 0;
+    const mealRate = totalMealsServed > 0
+      ? parseFloat((totalExpenses / totalMealsServed).toFixed(2))
+      : 0;
 
     return res.status(200).json({
       month,
@@ -319,20 +321,25 @@ const finalizeMonth = async (req, res) => {
 
     const registrationsByUser = {};
     for (const reg of allRegistrations) {
+      if (!reg.userId) continue;
       const uid = reg.userId.toString();
       if (!registrationsByUser[uid]) registrationsByUser[uid] = [];
       registrationsByUser[uid].push(reg);
     }
 
+    // depositsByUser
     const depositsByUser = {};
     for (const dep of allDeposits) {
+      if (!dep.userId) continue;
       const uid = dep.userId.toString();
       depositsByUser[uid] = (depositsByUser[uid] || 0) + dep.amount;
     }
 
+    // balanceByUser
     const balanceByUser = {};
     for (const b of allBalances) {
-      balanceByUser[b.userId] = b.balance || 0;
+      if (!b.userId) continue;
+      balanceByUser[b.userId.toString()] = b.balance || 0;
     }
 
     const totalExpenses = monthExpenses.reduce((sum, exp) => sum + exp.amount, 0);
@@ -365,7 +372,9 @@ const finalizeMonth = async (req, res) => {
       totalMealsServed += userTotalMeals;
     }
 
-    const mealRate = totalMealsServed > 0 ? totalExpenses / totalMealsServed : 0;
+    const mealRate = totalMealsServed > 0
+      ? parseFloat((totalExpenses / totalMealsServed).toFixed(2))
+      : 0;
     const totalDeposits = Object.values(depositsByUser).reduce((sum, amt) => sum + amt, 0);
 
     const memberDetails = [];
@@ -379,7 +388,7 @@ const finalizeMonth = async (req, res) => {
       const mealCost = totalMeals * mealRate;
       const previousBalance = balanceByUser[userId] || 0;
       const mosqueFee = user.mosqueFee || 0;
-      const newBalance = previousBalance + totalUserDeposits - mealCost - mosqueFee;
+      const newBalance = previousBalance - mealCost - mosqueFee;
 
       let status = 'paid';
       if (newBalance < 0) status = 'due';
