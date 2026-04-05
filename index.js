@@ -17,7 +17,7 @@ app.use('/users', usersRouter);
 app.use('/finance', financeRouter);
 
 app.get('/', (req, res) => {
-  res.send('Welcome to dining management server')
+  res.send('Dining Management System server is running')
 })
 
 connectMongoDB().then(() => {
