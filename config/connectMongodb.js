@@ -31,6 +31,7 @@ const getCollections = async () => {
     return {
         users: db.collection('users'),
         mealSchedules: db.collection('mealSchedules'),
+        mealDeadlines: db.collection('mealDeadlines'),
         mealRegistrations: db.collection('mealRegistrations'),
         payments: db.collection('payments'),
         deposits: db.collection('deposits'),

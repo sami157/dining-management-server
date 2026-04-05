@@ -7,9 +7,6 @@
 
 ## Auth Middleware
 
-- Harden Firebase auth initialization.
-  - Validate required env vars before boot and fail with a clear startup error if `FB_SERVICE_KEY` is missing or malformed.
-
 - Improve auth failure responses.
   - Distinguish between missing token, invalid token, valid token with no app user, and role mismatch.
 

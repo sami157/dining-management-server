@@ -1,7 +1,6 @@
 const express = require('express');
 const verifyFirebaseToken = require('../../middleware/verifyFirebaseToken')
-const { getAvailableMeals, getTotalMealsForUser, cancelMealRegistration, registerMeal, updateMealRegistration, bulkToggleMealsForUser } = require('./users.controller');
-const { createUser, getUserProfile, updateUserProfile, updateUserRole, getAllUsers, getUserRole, updateFixedDeposit, updateMosqueFee, checkUserWithEmail } = require('./users.management.controller');
+const { createUser, getUserProfile, updateUserProfile, updateUserRole, getAllUsers, getUserRole, updateFixedDeposit, updateMosqueFee, checkUserWithEmail } = require('./users.controller');
 const router = express.Router();
 
 // User management
@@ -14,23 +13,5 @@ router.put('/mosqueFee/:userId', verifyFirebaseToken(['admin', 'super_admin']), 
 router.get('/', getAllUsers); //admin or manager can access
 router.get('/get-role/:email', getUserRole);
 router.get('/check-user/:email', checkUserWithEmail)
-
-// get all available meals
-router.get('/meals/available', verifyFirebaseToken(), getAvailableMeals);
-
-// register for a meal
-router.post('/meals/register', verifyFirebaseToken(), registerMeal);
-
-// bulk register for meals for a month
-router.post('/meals/bulk-register', verifyFirebaseToken(), bulkToggleMealsForUser);
-
-// Edit number of meals per registration
-router.patch('/meals/register/:registrationId', verifyFirebaseToken(), updateMealRegistration);
-
-// cancel a registration
-router.delete('/meals/register/cancel/:registrationId', verifyFirebaseToken(), cancelMealRegistration);
-
-// total meals of a user by month
-router.get('/meals/total/:email', verifyFirebaseToken(), getTotalMealsForUser);
 
 module.exports = router;
