@@ -1,45 +1,106 @@
 const { ObjectId } = require('mongodb');
 const { getCollections } = require('../../config/connectMongodb');
+const admin = require('../../config/firebaseAdmin');
 
 const VALID_ROLES = ['admin', 'manager', 'member', 'moderator', 'staff', 'super_admin'];
 
 const createUser = async (req, res) => {
   try {
     const { name, building, room, email, mobile, designation, bank, department } = req.body;
+    const firebaseUid = req.firebaseUser?.uid;
+    const tokenEmail = req.firebaseUser?.email;
 
-    if (!name || !mobile || !email) {
-      return res.status(400).json({ error: 'name, mobile, email are required' });
+    if (!firebaseUid || !tokenEmail) {
+      return res.status(401).json({ error: 'Authenticated Firebase user is required' });
     }
 
+    if (email && email !== tokenEmail) {
+      return res.status(400).json({ error: 'Email must match the authenticated Firebase user' });
+    }
+
+    if (!name || !mobile) {
+      return res.status(400).json({ error: 'name and mobile are required' });
+    }
+
+    const firebaseUser = await admin.auth().getUser(firebaseUid);
+
     const { users } = await getCollections();
-    const existingUser = await users.findOne({ email });
+    const existingUser = await users.findOne({
+      $or: [
+        { email: tokenEmail },
+        { firebaseUid }
+      ]
+    });
+
+    const now = new Date();
+    const syncData = {
+      firebaseUid,
+      email: firebaseUser.email || tokenEmail,
+      emailVerified: Boolean(firebaseUser.emailVerified),
+      displayName: firebaseUser.displayName || '',
+      phoneNumber: firebaseUser.phoneNumber || '',
+      photoURL: firebaseUser.photoURL || '',
+      providers: (firebaseUser.providerData || []).map(provider => provider.providerId),
+      lastSyncedAt: now,
+      updatedAt: now
+    };
 
     if (existingUser) {
-      return res.status(400).json({ error: 'User with this email already exists' });
+      const updateData = {
+        ...syncData,
+        name,
+        building,
+        room,
+        mobile,
+        bank,
+        designation: designation || '',
+        department: department || ''
+      };
+
+      await users.updateOne(
+        { _id: existingUser._id },
+        { $set: updateData }
+      );
+
+      const syncedUser = await users.findOne({ _id: existingUser._id });
+
+      return res.status(200).json({
+        message: 'User synced successfully',
+        userId: existingUser._id,
+        user: syncedUser
+      });
     }
 
     const newUser = {
-      name, building, room, email, mobile, bank,
+      firebaseUid,
+      email: firebaseUser.email || tokenEmail,
+      emailVerified: Boolean(firebaseUser.emailVerified),
+      displayName: firebaseUser.displayName || '',
+      phoneNumber: firebaseUser.phoneNumber || '',
+      photoURL: firebaseUser.photoURL || '',
+      providers: (firebaseUser.providerData || []).map(provider => provider.providerId),
+      name, building, room, mobile, bank,
       designation: designation || '',
       department: department || '',
       role: 'member',
       fixedDeposit: 0,
       mosqueFee: 0,
-      createdAt: new Date(),
-      updatedAt: new Date()
+      createdAt: now,
+      updatedAt: now,
+      lastSyncedAt: now
     };
 
     const result = await users.insertOne(newUser);
 
     return res.status(201).json({
-      message: 'User created successfully',
+      message: 'User registered and synced successfully',
       userId: result.insertedId,
       user: { ...newUser, _id: result.insertedId }
     });
 
   } catch (error) {
     console.error('Error creating user:', error);
-    return res.status(500).json({ error: 'Failed to create user' });
+      return res.status(500).json({ error: 'Failed to register user' });
   }
 };
 
