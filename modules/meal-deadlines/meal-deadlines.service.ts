@@ -1,6 +1,7 @@
 // @ts-nocheck
 const { DateTime } = require('luxon');
 const { getCollections } = require('../../config/connectMongodb');
+const { BUSINESS_TIMEZONE, serviceDateToBusinessDayStartUtc } = require('../shared/date.utils');
 
 const DEADLINE_CONFIG_KEY = 'global';
 const MEAL_TYPES = ['morning', 'evening', 'night'];
@@ -122,8 +123,11 @@ const calculateMealDeadline = (mealDate, mealType, customDeadline, mealDeadlineC
     throw new Error(`No deadline config found for meal type: ${mealType}`);
   }
 
-  return DateTime.fromJSDate(mealDate)
-    .setZone('Asia/Dhaka')
+  const businessDay = typeof mealDate === 'string'
+    ? DateTime.fromJSDate(serviceDateToBusinessDayStartUtc(mealDate), { zone: 'utc' }).setZone(BUSINESS_TIMEZONE)
+    : DateTime.fromJSDate(mealDate, { zone: 'utc' }).setZone(BUSINESS_TIMEZONE);
+
+  return businessDay
     .plus({ days: config.dayOffset })
     .set({ hour: config.hour, minute: config.minute, second: 0, millisecond: 0 })
     .toUTC()

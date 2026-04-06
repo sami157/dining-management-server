@@ -2,32 +2,57 @@
 const admin = require("../config/firebaseAdmin");
 const { getCollections } = require('../config/connectMongodb');
 const { createHttpError } = require('./errorHandler');
-const verifyFirebaseToken = (allowedRoles = []) => {
+const getBearerToken = (authHeader) => {
+    if (!authHeader) {
+        return { error: createHttpError(401, 'Missing authorization token', { code: 'AUTH_MISSING_TOKEN' }) };
+    }
+    const [scheme, token] = authHeader.split(' ');
+    if (scheme !== 'Bearer' || !token) {
+        return { error: createHttpError(401, 'Invalid authorization header', { code: 'AUTH_INVALID_AUTH_HEADER' }) };
+    }
+    return { token };
+};
+const verifyFirebaseToken = (allowedRoles = [], options = {}) => {
     return async (req, res, next) => {
         try {
-            const authHeader = req.headers.authorization;
-            const idToken = authHeader?.split(' ')[1];
-            if (!idToken) {
-                return next(createHttpError(401, 'Missing authorization token'));
+            if (!Array.isArray(allowedRoles)) {
+                return next(createHttpError(500, 'Invalid auth middleware configuration', { code: 'AUTH_CONFIG_ERROR' }));
             }
-            const decoded = await admin.auth().verifyIdToken(idToken);
+            const { token, error: authHeaderError } = getBearerToken(req.headers.authorization);
+            if (authHeaderError) {
+                return next(authHeaderError);
+            }
+            let decoded;
+            try {
+                decoded = await admin.auth().verifyIdToken(token);
+            }
+            catch {
+                return next(createHttpError(401, 'Invalid authorization token', { code: 'AUTH_INVALID_TOKEN' }));
+            }
             const { users } = await getCollections();
             const user = await users.findOne({ email: decoded.email });
-            if (!Array.isArray(allowedRoles)) {
-                return next(createHttpError(500, 'Invalid auth middleware configuration'));
+            const requiresAppUser = !options.allowMissingUser;
+            if (requiresAppUser && !user) {
+                return next(createHttpError(403, 'Authenticated user is not registered in the application', { code: 'AUTH_APP_USER_NOT_FOUND' }));
             }
             if (allowedRoles.length > 0 && !user) {
-                return next(createHttpError(403, 'Unauthorized'));
+                return next(createHttpError(403, 'Authenticated user is not registered in the application', { code: 'AUTH_APP_USER_NOT_FOUND' }));
             }
             if (allowedRoles.length > 0 && !allowedRoles.includes(user.role)) {
-                return next(createHttpError(403, 'Forbidden'));
+                return next(createHttpError(403, 'Insufficient role permissions', {
+                    code: 'AUTH_ROLE_FORBIDDEN',
+                    details: {
+                        allowedRoles,
+                        userRole: user.role || null
+                    }
+                }));
             }
             req.firebaseUser = decoded;
             req.user = user || null;
             return next();
         }
         catch {
-            return next(createHttpError(403, 'Unauthorized'));
+            return next(createHttpError(500, 'Authentication middleware failed', { code: 'AUTH_MIDDLEWARE_ERROR' }));
         }
     };
 };

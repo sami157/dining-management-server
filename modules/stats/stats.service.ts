@@ -1,9 +1,17 @@
 const { getCollections } = require('../../config/connectMongodb');
 const { createHttpError } = require('../finance/finance.utils');
+const {
+  formatServiceDate,
+  getMonthServiceDateRange
+} = require('../shared/date.utils');
 import type { RunningMealRateQuery } from './stats.validation';
 
+const buildCanonicalServiceDateRangeQuery = (startDate: string, endDate: string) => ({
+  serviceDate: { $gte: startDate, $lte: endDate }
+});
+
 type MealSchedule = {
-  date: Date;
+  serviceDate: string;
   availableMeals?: Array<{
     mealType: string;
     weight?: number;
@@ -11,7 +19,7 @@ type MealSchedule = {
 };
 
 type MealRegistration = {
-  date: Date;
+  serviceDate: string;
   mealType: string;
   numberOfMeals?: number;
 };
@@ -39,18 +47,8 @@ const getRunningMealRateSummary = async ({
   month,
   date
 }: RunningMealRateQuery): Promise<RunningMealRateSummary> => {
-  const targetDate = date ? new Date(date) : new Date();
-  if (Number.isNaN(targetDate.getTime())) {
-    throw createHttpError(400, 'date must be a valid date string (e.g., 2025-01-15)');
-  }
-
-  const [year, monthNum] = month.split('-').map(Number);
-  const startDate = new Date(year, monthNum - 1, 1);
-  startDate.setHours(0, 0, 0, 0);
-  const monthEndDate = new Date(year, monthNum, 0);
-  monthEndDate.setHours(23, 59, 59, 999);
-  const endDate = new Date(targetDate);
-  endDate.setHours(23, 59, 59, 999);
+  const targetServiceDate = date || formatServiceDate();
+  const { startServiceDate, endServiceDate: monthEndServiceDate } = getMonthServiceDateRange(month);
 
   const { users, mealRegistrations, mealSchedules, expenses, monthlyFinalization } = await getCollections();
   const finalizedMonth = await monthlyFinalization.findOne({ month });
@@ -60,28 +58,28 @@ const getRunningMealRateSummary = async ({
 
     return {
       month,
-      asOf: monthEndDate.toISOString().split('T')[0],
+      asOf: monthEndServiceDate,
       totalMealsServed: finalization.totalMealsServed || 0,
       totalExpenses: finalization.totalExpenses || 0,
       mealRate: Number((finalization.mealRate || 0).toFixed(2))
     };
   }
 
-  const [allRegistrations, allSchedules, monthExpenses] = await Promise.all([
+  const [, allRegistrations, allSchedules, monthExpenses] = await Promise.all([
     users.find({ isActive: { $ne: false } }).toArray(),
-    mealRegistrations.find({ date: { $gte: startDate, $lte: endDate } }).toArray(),
-    mealSchedules.find({ date: { $gte: startDate, $lte: endDate } }).toArray(),
-    expenses.find({ date: { $gte: startDate, $lte: endDate } }).toArray()
+    mealRegistrations.find(buildCanonicalServiceDateRangeQuery(startServiceDate, targetServiceDate)).toArray(),
+    mealSchedules.find(buildCanonicalServiceDateRangeQuery(startServiceDate, targetServiceDate)).toArray(),
+    expenses.find(buildCanonicalServiceDateRangeQuery(startServiceDate, targetServiceDate)).toArray()
   ]);
 
   const scheduleMap: Record<string, MealSchedule> = {};
   for (const schedule of allSchedules as MealSchedule[]) {
-    scheduleMap[schedule.date.toISOString()] = schedule;
+    scheduleMap[schedule.serviceDate] = schedule;
   }
 
   let totalMealsServed = 0;
   for (const registration of allRegistrations as MealRegistration[]) {
-    const schedule = scheduleMap[registration.date.toISOString()];
+    const schedule = scheduleMap[registration.serviceDate];
     if (!schedule) {
       continue;
     }
@@ -99,7 +97,7 @@ const getRunningMealRateSummary = async ({
 
   return {
     month,
-    asOf: targetDate.toISOString().split('T')[0],
+    asOf: targetServiceDate,
     totalMealsServed,
     totalExpenses,
     mealRate: Number(mealRate.toFixed(2))

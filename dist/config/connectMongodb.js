@@ -10,7 +10,7 @@ let dbInstance;
 const connectMongoDB = async () => {
     if (dbInstance)
         return dbInstance; // reuse if already connected
-    const client = new MongoClient(uri, {
+    client = new MongoClient(uri, {
         serverApi: {
             version: ServerApiVersion.v1,
             strict: true,
@@ -22,6 +22,20 @@ const connectMongoDB = async () => {
     await client.connect();
     dbInstance = client.db('diningManagementDB');
     return dbInstance;
+};
+const getMongoClient = async () => {
+    await connectMongoDB();
+    return client;
+};
+const withMongoTransaction = async (work) => {
+    const mongoClient = await getMongoClient();
+    const session = mongoClient.startSession();
+    try {
+        return await session.withTransaction(async () => work(session));
+    }
+    finally {
+        await session.endSession();
+    }
 };
 const getCollections = async () => {
     const db = await connectMongoDB();
@@ -38,4 +52,4 @@ const getCollections = async () => {
         systemLogs: db.collection('systemLogs'),
     };
 };
-module.exports = { connectMongoDB, getCollections };
+module.exports = { connectMongoDB, getCollections, getMongoClient, withMongoTransaction };

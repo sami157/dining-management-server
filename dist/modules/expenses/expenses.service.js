@@ -2,9 +2,13 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 // @ts-nocheck
 const { ObjectId } = require('mongodb');
-const { format } = require('date-fns');
 const { getCollections } = require('../../config/connectMongodb');
 const { createHttpError } = require('../finance/finance.utils');
+const { formatServiceDate, getCurrentServiceDate, getServiceMonth, normalizeBusinessDateFields, serviceDateToLegacyDate } = require('../shared/date.utils');
+const { assertMonthIsNotFinalized } = require('../shared/service-rules');
+const buildCanonicalServiceDateRangeQuery = (startDate, endDate) => ({
+    serviceDate: { $gte: startDate, $lte: endDate }
+});
 const addExpenseEntry = async ({ date, category, amount, description, person }, managerId) => {
     if (!date || !category || !amount) {
         throw createHttpError(400, 'date, category, and amount are required');
@@ -13,15 +17,20 @@ const addExpenseEntry = async ({ date, category, amount, description, person }, 
         throw createHttpError(400, 'amount must be a positive number');
     }
     const { expenses } = await getCollections();
+    const serviceDate = formatServiceDate(date);
+    const todayServiceDate = getCurrentServiceDate();
     const expense = {
-        date: new Date(date),
+        date: serviceDateToLegacyDate(serviceDate),
+        serviceDate,
         category,
         amount,
         description: description || '',
         person: person || '',
         addedBy: managerId,
         createdAt: new Date(),
-        updatedAt: new Date()
+        createdDate: todayServiceDate,
+        updatedAt: new Date(),
+        updatedDate: todayServiceDate
     };
     const result = await expenses.insertOne(expense);
     return { expenseId: result.insertedId, expense: { ...expense, _id: result.insertedId } };
@@ -29,16 +38,12 @@ const addExpenseEntry = async ({ date, category, amount, description, person }, 
 const listExpenses = async ({ startDate, endDate, category }) => {
     const query = {};
     if (startDate && endDate) {
-        const start = new Date(startDate);
-        const end = new Date(endDate);
-        start.setHours(0, 0, 0, 0);
-        end.setHours(23, 59, 59, 999);
-        query.date = { $gte: start, $lte: end };
+        Object.assign(query, buildCanonicalServiceDateRangeQuery(startDate, endDate));
     }
     if (category)
         query.category = category;
     const { users, expenses } = await getCollections();
-    const allExpenses = await expenses.find(query).sort({ date: -1 }).toArray();
+    const allExpenses = await expenses.find(query).sort({ serviceDate: -1, createdAt: -1 }).toArray();
     const managerIds = [...new Set(allExpenses.map(expense => expense.addedBy?.toString()).filter(id => id && ObjectId.isValid(id)))]
         .map(id => new ObjectId(id));
     const managersList = await users.find({ _id: { $in: managerIds } }).toArray();
@@ -47,7 +52,9 @@ const listExpenses = async ({ startDate, endDate, category }) => {
         managersMap[manager._id.toString()] = manager;
     }
     const expensesWithManagers = allExpenses.map(expense => ({
-        ...expense,
+        ...normalizeBusinessDateFields(expense),
+        createdDate: expense.createdDate,
+        updatedDate: expense.updatedDate,
         addedByName: managersMap[expense.addedBy?.toString()]?.name || 'Unknown'
     }));
     return { count: expensesWithManagers.length, expenses: expensesWithManagers };
@@ -61,16 +68,13 @@ const updateExpenseById = async (expenseId, { date, category, amount, descriptio
     if (!existingExpense) {
         throw createHttpError(404, 'Expense not found');
     }
-    const expenseMonth = format(existingExpense.date, 'yyyy-MM');
-    const finalized = await monthlyFinalization.findOne({ month: expenseMonth });
-    if (finalized) {
-        throw createHttpError(400, 'Cannot update expense - month is already finalized');
-    }
-    const updateData = { updatedAt: new Date() };
+    const expenseMonth = getServiceMonth(existingExpense.serviceDate);
+    await assertMonthIsNotFinalized(monthlyFinalization, expenseMonth);
+    const updateData = { updatedAt: new Date(), updatedDate: getCurrentServiceDate() };
     if (date !== undefined) {
-        const newDate = new Date(date);
-        newDate.setHours(0, 0, 0, 0);
-        updateData.date = newDate;
+        const serviceDate = formatServiceDate(date);
+        updateData.date = serviceDateToLegacyDate(serviceDate);
+        updateData.serviceDate = serviceDate;
     }
     if (category !== undefined)
         updateData.category = category;
@@ -91,11 +95,8 @@ const deleteExpenseById = async (expenseId) => {
     if (!existingExpense) {
         throw createHttpError(404, 'Expense not found');
     }
-    const expenseMonth = format(existingExpense.date, 'yyyy-MM');
-    const finalized = await monthlyFinalization.findOne({ month: expenseMonth });
-    if (finalized) {
-        throw createHttpError(400, 'Cannot delete expense - month is already finalized');
-    }
+    const expenseMonth = getServiceMonth(existingExpense.serviceDate);
+    await assertMonthIsNotFinalized(monthlyFinalization, expenseMonth);
     await expenses.deleteOne({ _id: new ObjectId(expenseId) });
 };
 module.exports = {

@@ -25,7 +25,7 @@ import {
 
 const router = express.Router();
 
-router.post('/create', verifyFirebaseToken(), validateRequest({ body: createUserBodySchema }), createUser);
+router.post('/create', verifyFirebaseToken([], { allowMissingUser: true }), validateRequest({ body: createUserBodySchema }), createUser);
 router.get('/profile', verifyFirebaseToken(), getUserProfile);
 router.put('/profile', verifyFirebaseToken(), validateRequest({ body: updateUserProfileBodySchema }), updateUserProfile);
 router.put(

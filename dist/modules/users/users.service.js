@@ -4,12 +4,9 @@ Object.defineProperty(exports, "__esModule", { value: true });
 const { ObjectId } = require('mongodb');
 const { getCollections } = require('../../config/connectMongodb');
 const admin = require('../../config/firebaseAdmin');
+const { createHttpError } = require('../finance/finance.utils');
+const { assertAllowedRole } = require('../shared/service-rules');
 const VALID_ROLES = ['admin', 'manager', 'member', 'moderator', 'staff', 'super_admin'];
-const createHttpError = (status, message) => {
-    const error = new Error(message);
-    error.status = status;
-    return error;
-};
 const registerOrSyncUser = async (payload, firebaseUserToken) => {
     const { name, building, room, email, mobile, designation, bank, department } = payload;
     const firebaseUid = firebaseUserToken?.uid;
@@ -124,9 +121,7 @@ const updateUserProfileByEmail = async (email, payload) => {
     return user;
 };
 const updateUserRoleById = async (userId, role, currentUserRole) => {
-    if (!['admin', 'manager'].includes(currentUserRole)) {
-        throw createHttpError(403, 'Only admins and managers can update user roles');
-    }
+    assertAllowedRole(currentUserRole, ['admin', 'manager'], 'Only admins and managers can update user roles');
     if (!ObjectId.isValid(userId)) {
         throw createHttpError(400, 'Invalid user ID');
     }
@@ -144,9 +139,7 @@ const updateFixedDepositByUserId = async (userId, fixedDeposit, currentUserRole)
     if (!ObjectId.isValid(userId)) {
         throw createHttpError(400, 'Invalid user ID');
     }
-    if (currentUserRole !== 'admin' && currentUserRole !== 'super_admin') {
-        throw createHttpError(403, 'You are not authorized');
-    }
+    assertAllowedRole(currentUserRole, ['admin', 'super_admin']);
     const { users } = await getCollections();
     const user = await users.findOneAndUpdate({ _id: new ObjectId(userId) }, { $set: { fixedDeposit, updatedAt: new Date() } }, { returnDocument: 'after' });
     if (!user) {
@@ -158,9 +151,7 @@ const updateMosqueFeeByUserId = async (userId, mosqueFee, currentUserRole) => {
     if (!ObjectId.isValid(userId)) {
         throw createHttpError(400, 'Invalid user ID');
     }
-    if (currentUserRole !== 'admin' && currentUserRole !== 'super_admin') {
-        throw createHttpError(403, 'You are not authorized');
-    }
+    assertAllowedRole(currentUserRole, ['admin', 'super_admin']);
     const { users } = await getCollections();
     const user = await users.findOneAndUpdate({ _id: new ObjectId(userId) }, { $set: { mosqueFee, updatedAt: new Date() } }, { returnDocument: 'after' });
     if (!user) {

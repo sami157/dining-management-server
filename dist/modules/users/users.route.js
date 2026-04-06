@@ -8,7 +8,7 @@ const validateRequest = require("../../middleware/validateRequest");
 const users_controller_1 = require("./users.controller");
 const users_validation_1 = require("./users.validation");
 const router = express_1.default.Router();
-router.post('/create', verifyFirebaseToken(), validateRequest({ body: users_validation_1.createUserBodySchema }), users_controller_1.createUser);
+router.post('/create', verifyFirebaseToken([], { allowMissingUser: true }), validateRequest({ body: users_validation_1.createUserBodySchema }), users_controller_1.createUser);
 router.get('/profile', verifyFirebaseToken(), users_controller_1.getUserProfile);
 router.put('/profile', verifyFirebaseToken(), validateRequest({ body: users_validation_1.updateUserProfileBodySchema }), users_controller_1.updateUserProfile);
 router.put('/role/:userId', verifyFirebaseToken(['admin', 'manager', 'super_admin']), validateRequest({ params: users_validation_1.userIdParamsSchema, body: users_validation_1.updateUserRoleBodySchema }), users_controller_1.updateUserRole);

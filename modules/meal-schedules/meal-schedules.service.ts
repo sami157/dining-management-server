@@ -1,12 +1,18 @@
 // @ts-nocheck
 const { ObjectId } = require('mongodb');
 const { getCollections } = require('../../config/connectMongodb');
+const { createHttpError } = require('../finance/finance.utils');
+const {
+  formatServiceDate,
+  normalizeBusinessDateFields,
+  serviceDateToLegacyDate
+} = require('../shared/date.utils');
 
-const createHttpError = (status, message) => {
-  const error = new Error(message);
-  error.status = status;
-  return error;
-};
+const buildCanonicalServiceDateRangeQuery = (startDate, endDate) => ({
+  serviceDate: { $gte: startDate, $lte: endDate }
+});
+
+const buildCanonicalServiceDateEqualityQuery = (serviceDate) => ({ serviceDate });
 
 const isWeekend = (date) => {
   const day = date.getDay();
@@ -38,8 +44,8 @@ const generateSchedulesForRange = async ({ startDate, endDate }, managerId) => {
     throw createHttpError(400, 'Start and end dates are required');
   }
 
-  const start = new Date(`${startDate}T00:00:00.000Z`);
-  const end = new Date(`${endDate}T00:00:00.000Z`);
+  const start = serviceDateToLegacyDate(startDate);
+  const end = serviceDateToLegacyDate(endDate);
 
   if (isNaN(start) || isNaN(end)) {
     throw createHttpError(400, 'Invalid date format');
@@ -56,19 +62,21 @@ const generateSchedulesForRange = async ({ startDate, endDate }, managerId) => {
 
   const { mealSchedules, mealRegistrations, users } = await getCollections();
   const [existingSchedules, defaultUsers] = await Promise.all([
-    mealSchedules.find({ date: { $gte: start, $lte: end } }, { projection: { date: 1 } }).toArray(),
+    mealSchedules.find(buildCanonicalServiceDateRangeQuery(startDate, endDate), { projection: { serviceDate: 1 } }).toArray(),
     users.find({ mealDefault: true }, { projection: { _id: 1 } }).toArray()
   ]);
 
-  const existingDates = new Set(existingSchedules.map(schedule => schedule.date.getTime()));
+  const existingDates = new Set(existingSchedules.map(schedule => schedule.serviceDate));
   const schedulesToCreate = [];
   const currentDate = new Date(start);
 
   while (currentDate <= end) {
     const dateToCheck = new Date(currentDate);
-    if (!existingDates.has(dateToCheck.getTime())) {
+    const serviceDate = formatServiceDate(dateToCheck);
+    if (!existingDates.has(serviceDate)) {
       schedulesToCreate.push({
         date: dateToCheck,
+        serviceDate,
         isHoliday: false,
         availableMeals: getDefaultMeals(currentDate, false),
         createdBy: managerId,
@@ -102,6 +110,7 @@ const generateSchedulesForRange = async ({ startDate, endDate }, managerId) => {
           registrations.push({
             userId: user._id,
             date: schedule.date,
+            serviceDate: schedule.serviceDate,
             mealType,
             numberOfMeals: 1,
             registeredAt: new Date()
@@ -128,16 +137,16 @@ const listSchedules = async ({ startDate, endDate }) => {
     throw createHttpError(400, 'startDate and endDate are required');
   }
 
-  const start = new Date(startDate);
-  const end = new Date(endDate);
+  const start = serviceDateToLegacyDate(startDate);
+  const end = serviceDateToLegacyDate(endDate);
 
   if (start > end) {
     throw createHttpError(400, 'startDate must be before endDate');
   }
 
   const { mealSchedules } = await getCollections();
-  const schedules = await mealSchedules.find({ date: { $gte: start, $lte: end } }).sort({ date: 1 }).toArray();
-  return { count: schedules.length, schedules };
+  const schedules = await mealSchedules.find(buildCanonicalServiceDateRangeQuery(startDate, endDate)).sort({ serviceDate: 1 }).toArray();
+  return { count: schedules.length, schedules: schedules.map((schedule) => normalizeBusinessDateFields(schedule)) };
 };
 
 const updateScheduleById = async (scheduleId, { isHoliday, availableMeals }) => {
@@ -181,12 +190,12 @@ const updateScheduleById = async (scheduleId, { isHoliday, availableMeals }) => 
 
   if (unavailableMealTypes.length > 0) {
     await mealRegistrations.deleteMany({
-      date: schedule.date,
+      ...buildCanonicalServiceDateEqualityQuery(schedule.serviceDate),
       mealType: { $in: unavailableMealTypes }
     });
   }
 
-  return schedule;
+  return normalizeBusinessDateFields(schedule);
 };
 
 const deleteScheduleById = async (scheduleId) => {
@@ -201,7 +210,9 @@ const deleteScheduleById = async (scheduleId) => {
     throw createHttpError(404, 'Schedule not found');
   }
 
-  const { deletedCount } = await mealRegistrations.deleteMany({ date: schedule.date });
+  const { deletedCount } = await mealRegistrations.deleteMany(
+    buildCanonicalServiceDateEqualityQuery(schedule.serviceDate)
+  );
   return { registrationsCleared: deletedCount };
 };
 
@@ -210,17 +221,17 @@ const listRegistrationsForRange = async ({ startDate, endDate }) => {
     throw createHttpError(400, 'startDate and endDate query parameters are required');
   }
 
-  const start = new Date(startDate);
-  const end = new Date(endDate);
+  const start = serviceDateToLegacyDate(startDate);
+  const end = serviceDateToLegacyDate(endDate);
 
   if (start > end) {
     throw createHttpError(400, 'startDate must be before endDate');
   }
 
   const { mealRegistrations, users } = await getCollections();
-  const registrations = await mealRegistrations.find({
-    date: { $gte: start, $lte: end }
-  }).sort({ date: 1, userId: 1, mealType: 1 }).toArray();
+  const registrations = await mealRegistrations.find(
+    buildCanonicalServiceDateRangeQuery(startDate, endDate)
+  ).sort({ serviceDate: 1, userId: 1, mealType: 1 }).toArray();
 
   const userIds = [...new Set(registrations.map(registration => registration.userId))];
   const usersMap = {};
@@ -236,7 +247,7 @@ const listRegistrationsForRange = async ({ startDate, endDate }) => {
   }
 
   const enrichedRegistrations = registrations.map(registration => ({
-    ...registration,
+    ...normalizeBusinessDateFields(registration),
     user: usersMap[registration.userId] || null
   }));
 
