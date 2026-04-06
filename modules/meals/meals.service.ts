@@ -1,5 +1,4 @@
-// @ts-nocheck
-const { ObjectId } = require('mongodb');
+import { ObjectId } from 'mongodb';
 const { getCollections } = require('../../config/connectMongodb');
 const { createHttpError } = require('../finance/finance.utils');
 const {
@@ -19,13 +18,60 @@ const {
   isPrivilegedRole
 } = require('../shared/service-rules');
 
-const buildCanonicalServiceDateRangeQuery = (startDate, endDate) => ({
+type MealOption = {
+  mealType: string;
+  isAvailable: boolean;
+  menu?: string;
+  weight?: number;
+  customDeadline?: string | null;
+};
+
+type ScheduleRecord = {
+  _id?: ObjectId;
+  date: Date;
+  serviceDate: string;
+  isHoliday: boolean;
+  availableMeals: MealOption[];
+};
+
+type RegistrationRecord = {
+  _id?: ObjectId;
+  userId: ObjectId;
+  date: Date;
+  serviceDate: string;
+  mealType: string;
+  numberOfMeals?: number;
+  registeredAt: Date;
+  mealDate?: string;
+};
+
+type UserRecord = {
+  _id: ObjectId;
+  name?: string;
+  email?: string;
+  role?: string;
+};
+
+type AvailableMealsQuery = {
+  startDate?: string;
+  endDate?: string;
+  month?: string;
+};
+
+type MealRegistrationPayload = {
+  date?: string;
+  mealType?: string;
+  userId?: string;
+  numberOfMeals?: number;
+};
+
+const buildCanonicalServiceDateRangeQuery = (startDate: string, endDate: string) => ({
   serviceDate: { $gte: startDate, $lte: endDate }
 });
 
-const buildCanonicalServiceDateEqualityQuery = (serviceDate) => ({ serviceDate });
+const buildCanonicalServiceDateEqualityQuery = (serviceDate: string) => ({ serviceDate });
 
-const getAvailableMealsForUser = async (userId, query) => {
+const getAvailableMealsForUser = async (userId: ObjectId, query: AvailableMealsQuery) => {
   const { startDate, endDate, month } = query;
   const currentTime = new Date();
   let start;
@@ -51,12 +97,12 @@ const getAvailableMealsForUser = async (userId, query) => {
 
   const { mealSchedules, mealRegistrations } = await getCollections();
   const [schedules, userRegistrations, mealDeadlineConfig] = await Promise.all([
-    mealSchedules.find(buildCanonicalServiceDateRangeQuery(start, end)).sort({ serviceDate: 1 }).toArray(),
-    mealRegistrations.find({ userId, ...buildCanonicalServiceDateRangeQuery(start, end) }).toArray(),
+    mealSchedules.find(buildCanonicalServiceDateRangeQuery(start, end)).sort({ serviceDate: 1 }).toArray() as Promise<ScheduleRecord[]>,
+    mealRegistrations.find({ userId, ...buildCanonicalServiceDateRangeQuery(start, end) }).toArray() as Promise<RegistrationRecord[]>,
     getMealDeadlineConfig()
   ]);
 
-  const registrationMap = {};
+  const registrationMap: Record<string, RegistrationRecord> = {};
   userRegistrations.forEach(reg => {
     const key = `${reg.serviceDate}_${reg.mealType}`;
     registrationMap[key] = reg;
@@ -89,7 +135,7 @@ const getAvailableMealsForUser = async (userId, query) => {
   return { count: schedulesWithMeals.length, schedules: schedulesWithMeals };
 };
 
-const createMealRegistration = async (payload, currentUser) => {
+const createMealRegistration = async (payload: MealRegistrationPayload, currentUser: UserRecord) => {
   const { date, mealType, userId: requestUserId, numberOfMeals } = payload;
   let userId = currentUser?._id;
   let isLateRegistration = false;
@@ -113,7 +159,7 @@ const createMealRegistration = async (payload, currentUser) => {
   const { mealSchedules, mealRegistrations, users, systemLogs } = await getCollections();
   const mealDeadlineConfig = await getMealDeadlineConfig();
 
-  const schedule = await mealSchedules.findOne(buildCanonicalServiceDateEqualityQuery(serviceDate));
+  const schedule = await mealSchedules.findOne(buildCanonicalServiceDateEqualityQuery(serviceDate)) as ScheduleRecord | null;
   if (!schedule) {
     throw createHttpError(404, 'No meal schedule found for this date');
   }
@@ -133,12 +179,12 @@ const createMealRegistration = async (payload, currentUser) => {
     });
   }
 
-  const existingRegistration = await mealRegistrations.findOne({ userId, mealType, ...buildCanonicalServiceDateEqualityQuery(serviceDate) });
+  const existingRegistration = await mealRegistrations.findOne({ userId, mealType, ...buildCanonicalServiceDateEqualityQuery(serviceDate) }) as RegistrationRecord | null;
   if (existingRegistration) {
     throw createHttpError(400, 'You have already registered for this meal');
   }
 
-  const registration = {
+  const registration: RegistrationRecord = {
     userId,
     date: mealDate,
     serviceDate,
@@ -158,8 +204,8 @@ const createMealRegistration = async (payload, currentUser) => {
 
   if (isLateRegistration) {
     const [byPerson, forPerson] = await Promise.all([
-      users.findOne({ _id: new ObjectId(currentUser?._id) }, { projection: { name: 1 } }),
-      users.findOne({ _id: userId }, { projection: { name: 1 } })
+      users.findOne({ _id: new ObjectId(currentUser?._id) }, { projection: { name: 1 } }) as Promise<UserRecord | null>,
+      users.findOne({ _id: userId }, { projection: { name: 1 } }) as Promise<UserRecord | null>
     ]);
 
     await systemLogs.insertOne({
@@ -177,7 +223,7 @@ const createMealRegistration = async (payload, currentUser) => {
   };
 };
 
-const editMealRegistration = async (registrationId, numberOfMeals, currentUser) => {
+const editMealRegistration = async (registrationId: string, numberOfMeals: number, currentUser: UserRecord) => {
   if (!ObjectId.isValid(registrationId)) {
     throw createHttpError(400, 'Invalid registration ID');
   }
@@ -188,7 +234,7 @@ const editMealRegistration = async (registrationId, numberOfMeals, currentUser) 
 
   const { mealRegistrations, mealSchedules } = await getCollections();
   const mealDeadlineConfig = await getMealDeadlineConfig();
-  const registration = await mealRegistrations.findOne({ _id: new ObjectId(registrationId) });
+  const registration = await mealRegistrations.findOne({ _id: new ObjectId(registrationId) }) as RegistrationRecord | null;
 
   if (!registration) {
     throw createHttpError(404, 'Registration not found');
@@ -197,7 +243,7 @@ const editMealRegistration = async (registrationId, numberOfMeals, currentUser) 
   assertRegistrationOwnershipOrPrivileged(registration, currentUser, 'You can only update your own registration');
 
   if (!isPrivilegedRole(currentUser.role)) {
-    const schedule = await mealSchedules.findOne(buildCanonicalServiceDateEqualityQuery(registration.serviceDate));
+    const schedule = await mealSchedules.findOne(buildCanonicalServiceDateEqualityQuery(registration.serviceDate)) as ScheduleRecord | null;
     if (!schedule) {
       throw createHttpError(404, 'Meal schedule not found for this date');
     }
@@ -222,15 +268,15 @@ const editMealRegistration = async (registrationId, numberOfMeals, currentUser) 
   );
 };
 
-const removeMealRegistration = async (registrationId, currentUser) => {
+const removeMealRegistration = async (registrationId: string, currentUser: UserRecord) => {
   if (!ObjectId.isValid(registrationId)) {
     throw createHttpError(400, 'Invalid registration ID');
   }
 
   const { users, mealRegistrations, mealSchedules, systemLogs } = await getCollections();
   const mealDeadlineConfig = await getMealDeadlineConfig();
-  const user = await users.findOne({ _id: currentUser?._id });
-  const registration = await mealRegistrations.findOne({ _id: new ObjectId(registrationId) });
+  const user = await users.findOne({ _id: currentUser?._id }) as UserRecord | null;
+  const registration = await mealRegistrations.findOne({ _id: new ObjectId(registrationId) }) as RegistrationRecord | null;
 
   if (!registration) {
     throw createHttpError(404, 'Registration not found');
@@ -239,7 +285,7 @@ const removeMealRegistration = async (registrationId, currentUser) => {
   const { isOwner } = assertRegistrationOwnershipOrPrivileged(registration, currentUser, 'You can only cancel your own registration');
 
   if (!isPrivilegedRole(user.role)) {
-    const schedule = await mealSchedules.findOne(buildCanonicalServiceDateEqualityQuery(registration.serviceDate));
+    const schedule = await mealSchedules.findOne(buildCanonicalServiceDateEqualityQuery(registration.serviceDate)) as ScheduleRecord | null;
     if (!schedule) {
       throw createHttpError(404, 'Meal schedule not found');
     }
@@ -260,8 +306,8 @@ const removeMealRegistration = async (registrationId, currentUser) => {
 
   if (!isOwner) {
     const [byPerson, forPerson] = await Promise.all([
-      users.findOne({ _id: new ObjectId(currentUser?._id) }, { projection: { name: 1 } }),
-      users.findOne({ _id: registration.userId }, { projection: { name: 1 } })
+      users.findOne({ _id: new ObjectId(currentUser?._id) }, { projection: { name: 1 } }) as Promise<UserRecord | null>,
+      users.findOne({ _id: registration.userId }, { projection: { name: 1 } }) as Promise<UserRecord | null>
     ]);
 
     await systemLogs.insertOne({
@@ -277,9 +323,9 @@ const removeMealRegistration = async (registrationId, currentUser) => {
   await mealRegistrations.deleteOne({ _id: new ObjectId(registrationId) });
 };
 
-const getMealTotalsForUser = async (email, month) => {
+const getMealTotalsForUser = async (email: string, month?: string) => {
   const { users, mealRegistrations, mealSchedules } = await getCollections();
-  const user = await users.findOne({ email });
+  const user = await users.findOne({ email }) as UserRecord | null;
 
   if (!user) {
     throw createHttpError(404, 'User not found');
@@ -306,11 +352,11 @@ const getMealTotalsForUser = async (email, month) => {
   }
 
   const [registrations, schedules] = await Promise.all([
-    mealRegistrations.find({ userId: user._id, ...buildCanonicalServiceDateRangeQuery(start, end) }).toArray(),
-    mealSchedules.find(buildCanonicalServiceDateRangeQuery(start, end)).toArray()
+    mealRegistrations.find({ userId: user._id, ...buildCanonicalServiceDateRangeQuery(start, end) }).toArray() as Promise<RegistrationRecord[]>,
+    mealSchedules.find(buildCanonicalServiceDateRangeQuery(start, end)).toArray() as Promise<ScheduleRecord[]>
   ]);
 
-  const scheduleMap = {};
+  const scheduleMap: Record<string, ScheduleRecord> = {};
   for (const schedule of schedules) {
     scheduleMap[schedule.serviceDate] = schedule;
   }
@@ -345,7 +391,7 @@ const getMealTotalsForUser = async (email, month) => {
   };
 };
 
-const bulkRegisterMealsForUser = async (month, userId) => {
+const bulkRegisterMealsForUser = async (month: string, userId: ObjectId) => {
   if (!month) {
     throw createHttpError(400, 'month is required (format: YYYY-MM)');
   }
@@ -355,8 +401,8 @@ const bulkRegisterMealsForUser = async (month, userId) => {
   const currentTime = new Date();
   const { mealSchedules, mealRegistrations } = await getCollections();
   const [schedules, existingRegistrations, mealDeadlineConfig] = await Promise.all([
-    mealSchedules.find(buildCanonicalServiceDateRangeQuery(startServiceDate, endServiceDate)).toArray(),
-    mealRegistrations.find({ userId, ...buildCanonicalServiceDateRangeQuery(startServiceDate, endServiceDate) }).toArray(),
+    mealSchedules.find(buildCanonicalServiceDateRangeQuery(startServiceDate, endServiceDate)).toArray() as Promise<ScheduleRecord[]>,
+    mealRegistrations.find({ userId, ...buildCanonicalServiceDateRangeQuery(startServiceDate, endServiceDate) }).toArray() as Promise<RegistrationRecord[]>,
     getMealDeadlineConfig()
   ]);
 
@@ -364,7 +410,7 @@ const bulkRegisterMealsForUser = async (month, userId) => {
     existingRegistrations.map(reg => `${reg.serviceDate}_${reg.mealType}`)
   );
 
-  const toInsert = [];
+  const toInsert: RegistrationRecord[] = [];
   for (const schedule of schedules) {
     for (const meal of schedule.availableMeals) {
       if (!meal.isAvailable) continue;
@@ -403,7 +449,7 @@ const bulkRegisterMealsForUser = async (month, userId) => {
   };
 };
 
-module.exports = {
+export = {
   getAvailableMealsForUser,
   createMealRegistration,
   editMealRegistration,

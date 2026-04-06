@@ -1,7 +1,5 @@
 "use strict";
-Object.defineProperty(exports, "__esModule", { value: true });
-// @ts-nocheck
-const { ObjectId } = require('mongodb');
+const mongodb_1 = require("mongodb");
 const { getCollections } = require('../../config/connectMongodb');
 const { createHttpError } = require('../finance/finance.utils');
 const { formatServiceDate, getCurrentServiceDate, getServiceMonth, normalizeBusinessDateFields, serviceDateToLegacyDate } = require('../shared/date.utils');
@@ -44,8 +42,8 @@ const listExpenses = async ({ startDate, endDate, category }) => {
         query.category = category;
     const { users, expenses } = await getCollections();
     const allExpenses = await expenses.find(query).sort({ serviceDate: -1, createdAt: -1 }).toArray();
-    const managerIds = [...new Set(allExpenses.map(expense => expense.addedBy?.toString()).filter(id => id && ObjectId.isValid(id)))]
-        .map(id => new ObjectId(id));
+    const managerIds = [...new Set(allExpenses.map(expense => expense.addedBy?.toString()).filter(id => id && mongodb_1.ObjectId.isValid(id)))]
+        .map(id => new mongodb_1.ObjectId(id));
     const managersList = await users.find({ _id: { $in: managerIds } }).toArray();
     const managersMap = {};
     for (const manager of managersList) {
@@ -60,11 +58,11 @@ const listExpenses = async ({ startDate, endDate, category }) => {
     return { count: expensesWithManagers.length, expenses: expensesWithManagers };
 };
 const updateExpenseById = async (expenseId, { date, category, amount, description, person }) => {
-    if (!ObjectId.isValid(expenseId)) {
+    if (!mongodb_1.ObjectId.isValid(expenseId)) {
         throw createHttpError(400, 'Invalid expense ID');
     }
     const { expenses, monthlyFinalization } = await getCollections();
-    const existingExpense = await expenses.findOne({ _id: new ObjectId(expenseId) });
+    const existingExpense = await expenses.findOne({ _id: new mongodb_1.ObjectId(expenseId) });
     if (!existingExpense) {
         throw createHttpError(404, 'Expense not found');
     }
@@ -84,20 +82,20 @@ const updateExpenseById = async (expenseId, { date, category, amount, descriptio
         updateData.description = description;
     if (person !== undefined)
         updateData.person = person;
-    await expenses.updateOne({ _id: new ObjectId(expenseId) }, { $set: updateData });
+    await expenses.updateOne({ _id: new mongodb_1.ObjectId(expenseId) }, { $set: updateData });
 };
 const deleteExpenseById = async (expenseId) => {
-    if (!ObjectId.isValid(expenseId)) {
+    if (!mongodb_1.ObjectId.isValid(expenseId)) {
         throw createHttpError(400, 'Invalid expense ID');
     }
     const { expenses, monthlyFinalization } = await getCollections();
-    const existingExpense = await expenses.findOne({ _id: new ObjectId(expenseId) });
+    const existingExpense = await expenses.findOne({ _id: new mongodb_1.ObjectId(expenseId) });
     if (!existingExpense) {
         throw createHttpError(404, 'Expense not found');
     }
     const expenseMonth = getServiceMonth(existingExpense.serviceDate);
     await assertMonthIsNotFinalized(monthlyFinalization, expenseMonth);
-    await expenses.deleteOne({ _id: new ObjectId(expenseId) });
+    await expenses.deleteOne({ _id: new mongodb_1.ObjectId(expenseId) });
 };
 module.exports = {
     addExpenseEntry,

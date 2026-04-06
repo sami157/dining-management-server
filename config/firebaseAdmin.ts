@@ -1,5 +1,5 @@
-// @ts-nocheck
-const admin = require('firebase-admin');
+import admin = require('firebase-admin');
+import type { ServiceAccount } from 'firebase-admin';
 
 const encodedServiceKey = process.env.FB_SERVICE_KEY;
 
@@ -8,7 +8,7 @@ if (!encodedServiceKey) {
 }
 
 const decodedServiceKey = Buffer.from(encodedServiceKey, 'base64').toString('utf8');
-const serviceAccount = JSON.parse(decodedServiceKey);
+const serviceAccount = JSON.parse(decodedServiceKey) as ServiceAccount;
 
 if (!admin.apps.length) {
   admin.initializeApp({
@@ -16,5 +16,5 @@ if (!admin.apps.length) {
   });
 }
 
-module.exports = admin;
+export = admin;
 

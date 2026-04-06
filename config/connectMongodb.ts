@@ -1,15 +1,30 @@
-// @ts-nocheck
-const dotenv = require('dotenv');
-const { MongoClient, ServerApiVersion } = require('mongodb');
+import dotenv = require('dotenv');
+import { Db, MongoClient, ServerApiVersion, type ClientSession, type Collection } from 'mongodb';
 
 dotenv.config();
 
 const uri = process.env.MONGODB_URI;
+if (!uri) {
+    throw new Error('MONGODB_URI is required');
+}
 
-let client;
-let dbInstance;
+type Collections = {
+    users: Collection;
+    mealSchedules: Collection;
+    mealDeadlines: Collection;
+    mealRegistrations: Collection;
+    payments: Collection;
+    deposits: Collection;
+    expenses: Collection;
+    memberBalances: Collection;
+    monthlyFinalization: Collection;
+    systemLogs: Collection;
+};
 
-const connectMongoDB = async () => {
+let client: MongoClient | undefined;
+let dbInstance: Db | undefined;
+
+const connectMongoDB = async (): Promise<Db> => {
     if (dbInstance) return dbInstance; // reuse if already connected
 
     client = new MongoClient(uri, {
@@ -27,12 +42,15 @@ const connectMongoDB = async () => {
     return dbInstance;
 };
 
-const getMongoClient = async () => {
+const getMongoClient = async (): Promise<MongoClient> => {
     await connectMongoDB();
+    if (!client) {
+        throw new Error('Mongo client was not initialized');
+    }
     return client;
 };
 
-const withMongoTransaction = async (work) => {
+const withMongoTransaction = async <T>(work: (session: ClientSession) => Promise<T>): Promise<T> => {
     const mongoClient = await getMongoClient();
     const session = mongoClient.startSession();
 
@@ -43,7 +61,7 @@ const withMongoTransaction = async (work) => {
     }
 };
 
-const getCollections = async () => {
+const getCollections = async (): Promise<Collections> => {
     const db = await connectMongoDB();
     return {
         users: db.collection('users'),
@@ -59,5 +77,5 @@ const getCollections = async () => {
     };
 };
 
-module.exports = { connectMongoDB, getCollections, getMongoClient, withMongoTransaction };
+export = { connectMongoDB, getCollections, getMongoClient, withMongoTransaction };
 

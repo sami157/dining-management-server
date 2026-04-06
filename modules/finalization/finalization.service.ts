@@ -1,4 +1,4 @@
-// @ts-nocheck
+import type { ClientSession, ObjectId } from 'mongodb';
 const { getCollections, withMongoTransaction } = require('../../config/connectMongodb');
 const { createHttpError } = require('../finance/finance.utils');
 const {
@@ -7,23 +7,88 @@ const {
   getMonthServiceDateRange
 } = require('../shared/date.utils');
 
-const buildCanonicalServiceDateRangeQuery = (startDate, endDate) => ({
+type UserRecord = {
+  _id: ObjectId;
+  name: string;
+  mosqueFee?: number;
+};
+
+type MealScheduleRecord = {
+  serviceDate: string;
+  availableMeals: Array<{
+    mealType: string;
+    weight?: number;
+  }>;
+};
+
+type MealRegistrationRecord = {
+  userId: { toString(): string };
+  serviceDate: string;
+  mealType: string;
+  numberOfMeals?: number;
+};
+
+type DepositRecord = {
+  userId: { toString(): string };
+  amount: number;
+};
+
+type BalanceRecord = {
+  userId: string;
+  balance?: number;
+};
+
+type ExpenseRecord = {
+  category: string;
+  amount: number;
+};
+
+type MemberDetail = {
+  userId: string;
+  userName: string;
+  totalMeals: number;
+  totalDeposits: number;
+  mealCost: number;
+  mosqueFee: number;
+  previousBalance: number;
+  newBalance: number;
+  status: string;
+};
+
+type FinalizationRecord = {
+  _id?: ObjectId;
+  month: string;
+  finalizedAt: Date;
+  finalizedDate?: string;
+  finalizedBy?: unknown;
+  totalMembers: number;
+  totalMealsServed: number;
+  totalDeposits: number;
+  totalExpenses: number;
+  mealRate: number;
+  memberDetails: MemberDetail[];
+  expenseBreakdown: Array<{ category: string; amount: number }>;
+  isFinalized: boolean;
+  notes: string;
+};
+
+const buildCanonicalServiceDateRangeQuery = (startDate: string, endDate: string) => ({
   serviceDate: { $gte: startDate, $lte: endDate }
 });
 
-const finalizeMonthSummary = async (month, managerId) => {
+const finalizeMonthSummary = async (month: string, managerId: unknown) => {
   const monthRegex = /^\d{4}-(0[1-9]|1[0-2])$/;
   if (!month || !monthRegex.test(month)) {
     throw createHttpError(400, 'month must be in YYYY-MM format (e.g., 2025-01)');
   }
 
-  return withMongoTransaction(async (session) => {
+  return withMongoTransaction(async (session: ClientSession) => {
     const {
       users, mealRegistrations, mealSchedules,
       deposits, memberBalances, expenses, monthlyFinalization
     } = await getCollections();
 
-    const existingFinalization = await monthlyFinalization.findOne({ month }, { session });
+    const existingFinalization = await monthlyFinalization.findOne({ month }, { session }) as FinalizationRecord | null;
     if (existingFinalization) {
       throw createHttpError(400, 'This month has already been finalized');
     }
@@ -32,20 +97,20 @@ const finalizeMonthSummary = async (month, managerId) => {
 
     const [allUsers, allRegistrations, allSchedules, allDeposits, allBalances, monthExpenses] =
       await Promise.all([
-        users.find({ isActive: { $ne: false } }, { session }).toArray(),
-        mealRegistrations.find(buildCanonicalServiceDateRangeQuery(startServiceDate, endServiceDate), { session }).toArray(),
-        mealSchedules.find(buildCanonicalServiceDateRangeQuery(startServiceDate, endServiceDate), { session }).toArray(),
-        deposits.find({ month }, { session }).toArray(),
-        memberBalances.find({}, { session }).toArray(),
-        expenses.find(buildCanonicalServiceDateRangeQuery(startServiceDate, endServiceDate), { session }).toArray()
+        users.find({ isActive: { $ne: false } }, { session }).toArray() as Promise<UserRecord[]>,
+        mealRegistrations.find(buildCanonicalServiceDateRangeQuery(startServiceDate, endServiceDate), { session }).toArray() as Promise<MealRegistrationRecord[]>,
+        mealSchedules.find(buildCanonicalServiceDateRangeQuery(startServiceDate, endServiceDate), { session }).toArray() as Promise<MealScheduleRecord[]>,
+        deposits.find({ month }, { session }).toArray() as Promise<DepositRecord[]>,
+        memberBalances.find({}, { session }).toArray() as Promise<BalanceRecord[]>,
+        expenses.find(buildCanonicalServiceDateRangeQuery(startServiceDate, endServiceDate), { session }).toArray() as Promise<ExpenseRecord[]>
       ]);
 
-    const scheduleMap = {};
+    const scheduleMap: Record<string, MealScheduleRecord> = {};
     for (const schedule of allSchedules) {
       scheduleMap[schedule.serviceDate] = schedule;
     }
 
-    const registrationsByUser = {};
+    const registrationsByUser: Record<string, MealRegistrationRecord[]> = {};
     for (const registration of allRegistrations) {
       if (!registration.userId) continue;
       const uid = registration.userId.toString();
@@ -53,27 +118,27 @@ const finalizeMonthSummary = async (month, managerId) => {
       registrationsByUser[uid].push(registration);
     }
 
-    const depositsByUser = {};
+    const depositsByUser: Record<string, number> = {};
     for (const deposit of allDeposits) {
       if (!deposit.userId) continue;
       const uid = deposit.userId.toString();
       depositsByUser[uid] = (depositsByUser[uid] || 0) + deposit.amount;
     }
 
-    const balanceByUser = {};
+    const balanceByUser: Record<string, number> = {};
     for (const balance of allBalances) {
       if (!balance.userId) continue;
       balanceByUser[balance.userId.toString()] = balance.balance || 0;
     }
 
     const totalExpenses = monthExpenses.reduce((sum, expense) => sum + expense.amount, 0);
-    const expenseBreakdown = {};
+    const expenseBreakdown: Record<string, number> = {};
     for (const expense of monthExpenses) {
       expenseBreakdown[expense.category] = (expenseBreakdown[expense.category] || 0) + expense.amount;
     }
     const expenseBreakdownArray = Object.entries(expenseBreakdown).map(([category, amount]) => ({ category, amount }));
 
-    const userMealsMap = {};
+    const userMealsMap: Record<string, number> = {};
     let totalMealsServed = 0;
 
     for (const user of allUsers) {
@@ -100,8 +165,17 @@ const finalizeMonthSummary = async (month, managerId) => {
       : 0;
     const totalDeposits = Object.values(depositsByUser).reduce((sum, amount) => sum + amount, 0);
 
-    const memberDetails = [];
-    const balanceUpdates = [];
+    const memberDetails: MemberDetail[] = [];
+    const balanceUpdates: Array<{
+      updateOne: {
+        filter: { userId: string };
+        update: {
+          $set: { balance: number; lastUpdated: Date };
+          $setOnInsert: { createdAt: Date };
+        };
+        upsert: true;
+      };
+    }> = [];
     const now = new Date();
 
     for (const user of allUsers) {
@@ -145,7 +219,7 @@ const finalizeMonthSummary = async (month, managerId) => {
       await memberBalances.bulkWrite(balanceUpdates, { session });
     }
 
-    const finalizationRecord = {
+    const finalizationRecord: FinalizationRecord = {
       month,
       finalizedAt: now,
       finalizedDate: getCurrentServiceDate(),
@@ -176,9 +250,9 @@ const finalizeMonthSummary = async (month, managerId) => {
   });
 };
 
-const getFinalizationByMonth = async (month) => {
+const getFinalizationByMonth = async (month: string) => {
   const { monthlyFinalization } = await getCollections();
-  const finalization = await monthlyFinalization.findOne({ month });
+  const finalization = await monthlyFinalization.findOne({ month }) as FinalizationRecord | null;
 
   if (!finalization) {
     throw createHttpError(404, 'Finalization not found for this month');
@@ -192,7 +266,7 @@ const getFinalizationByMonth = async (month) => {
   };
 };
 
-const getCurrentUserFinalization = async (userId, month) => {
+const getCurrentUserFinalization = async (userId: string, month: string) => {
   const monthRegex = /^\d{4}-(0[1-9]|1[0-2])$/;
   if (!month || !monthRegex.test(month)) {
     throw createHttpError(400, 'month must be in YYYY-MM format (e.g., 2025-01)');
@@ -202,7 +276,7 @@ const getCurrentUserFinalization = async (userId, month) => {
   const record = await monthlyFinalization.findOne(
     { month },
     { projection: { month: 1, finalizedAt: 1, mealRate: 1, totalMealsServed: 1, totalExpenses: 1, memberDetails: 1 } }
-  );
+  ) as FinalizationRecord | null;
 
   if (!record) {
     throw createHttpError(404, 'No finalization record found for this month');
@@ -228,7 +302,7 @@ const getCurrentUserFinalization = async (userId, month) => {
 
 const listFinalizations = async () => {
   const { monthlyFinalization } = await getCollections();
-  const finalizations = await monthlyFinalization.find({}).sort({ month: -1 }).toArray();
+  const finalizations = await monthlyFinalization.find({}).sort({ month: -1 }).toArray() as FinalizationRecord[];
   return {
     count: finalizations.length,
     finalizations: finalizations.map((item) => ({
@@ -238,15 +312,15 @@ const listFinalizations = async () => {
   };
 };
 
-const undoFinalizationByMonth = async (month) => {
+const undoFinalizationByMonth = async (month: string) => {
   const monthRegex = /^\d{4}-(0[1-9]|1[0-2])$/;
   if (!month || !monthRegex.test(month)) {
     throw createHttpError(400, 'month must be in YYYY-MM format (e.g., 2025-01)');
   }
 
-  return withMongoTransaction(async (session) => {
+  return withMongoTransaction(async (session: ClientSession) => {
     const { memberBalances, monthlyFinalization } = await getCollections();
-    const finalizationRecord = await monthlyFinalization.findOne({ month }, { session });
+    const finalizationRecord = await monthlyFinalization.findOne({ month }, { session }) as FinalizationRecord | null;
     if (!finalizationRecord) {
       throw createHttpError(404, 'No finalization record found for this month');
     }
@@ -255,7 +329,7 @@ const undoFinalizationByMonth = async (month) => {
     const nextMonthDate = new Date(year, monthNum, 1);
     const nextMonthStr = `${nextMonthDate.getFullYear()}-${String(nextMonthDate.getMonth() + 1).padStart(2, '0')}`;
 
-    const laterFinalization = await monthlyFinalization.findOne({ month: { $gte: nextMonthStr } }, { session });
+    const laterFinalization = await monthlyFinalization.findOne({ month: { $gte: nextMonthStr } }, { session }) as FinalizationRecord | null;
     if (laterFinalization) {
       throw createHttpError(400, `Cannot undo finalization for ${month} because ${laterFinalization.month} has already been finalized. You must undo that month first.`);
     }
@@ -281,7 +355,7 @@ const undoFinalizationByMonth = async (month) => {
   });
 };
 
-module.exports = {
+export = {
   finalizeMonthSummary,
   getFinalizationByMonth,
   getCurrentUserFinalization,

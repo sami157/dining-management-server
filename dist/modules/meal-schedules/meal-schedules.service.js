@@ -1,7 +1,5 @@
 "use strict";
-Object.defineProperty(exports, "__esModule", { value: true });
-// @ts-nocheck
-const { ObjectId } = require('mongodb');
+const mongodb_1 = require("mongodb");
 const { getCollections } = require('../../config/connectMongodb');
 const { createHttpError } = require('../finance/finance.utils');
 const { formatServiceDate, normalizeBusinessDateFields, serviceDateToLegacyDate } = require('../shared/date.utils');
@@ -122,7 +120,7 @@ const listSchedules = async ({ startDate, endDate }) => {
     return { count: schedules.length, schedules: schedules.map((schedule) => normalizeBusinessDateFields(schedule)) };
 };
 const updateScheduleById = async (scheduleId, { isHoliday, availableMeals }) => {
-    if (!ObjectId.isValid(scheduleId)) {
+    if (!mongodb_1.ObjectId.isValid(scheduleId)) {
         throw createHttpError(400, 'Invalid schedule ID');
     }
     if (availableMeals && !Array.isArray(availableMeals)) {
@@ -142,7 +140,7 @@ const updateScheduleById = async (scheduleId, { isHoliday, availableMeals }) => 
         }));
     }
     const { mealSchedules, mealRegistrations } = await getCollections();
-    const schedule = await mealSchedules.findOneAndUpdate({ _id: new ObjectId(scheduleId) }, { $set: updateData }, { returnDocument: 'after' });
+    const schedule = await mealSchedules.findOneAndUpdate({ _id: new mongodb_1.ObjectId(scheduleId) }, { $set: updateData }, { returnDocument: 'after' });
     if (!schedule) {
         throw createHttpError(404, 'Schedule not found');
     }
@@ -158,11 +156,11 @@ const updateScheduleById = async (scheduleId, { isHoliday, availableMeals }) => 
     return normalizeBusinessDateFields(schedule);
 };
 const deleteScheduleById = async (scheduleId) => {
-    if (!ObjectId.isValid(scheduleId)) {
+    if (!mongodb_1.ObjectId.isValid(scheduleId)) {
         throw createHttpError(400, 'Invalid schedule ID');
     }
     const { mealSchedules, mealRegistrations } = await getCollections();
-    const schedule = await mealSchedules.findOneAndDelete({ _id: new ObjectId(scheduleId) });
+    const schedule = await mealSchedules.findOneAndDelete({ _id: new mongodb_1.ObjectId(scheduleId) });
     if (!schedule) {
         throw createHttpError(404, 'Schedule not found');
     }
@@ -184,7 +182,7 @@ const listRegistrationsForRange = async ({ startDate, endDate }) => {
     const usersMap = {};
     if (userIds.length > 0) {
         const usersList = await users.find({
-            _id: { $in: userIds.map(id => new ObjectId(id)) }
+            _id: { $in: userIds.map(id => new mongodb_1.ObjectId(id)) }
         }).toArray();
         usersList.forEach(user => {
             usersMap[user._id.toString()] = { name: user.name, email: user.email };
@@ -192,7 +190,7 @@ const listRegistrationsForRange = async ({ startDate, endDate }) => {
     }
     const enrichedRegistrations = registrations.map(registration => ({
         ...normalizeBusinessDateFields(registration),
-        user: usersMap[registration.userId] || null
+        user: usersMap[registration.userId.toString()] || null
     }));
     return {
         count: enrichedRegistrations.length,

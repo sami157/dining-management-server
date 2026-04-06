@@ -1,5 +1,4 @@
-// @ts-nocheck
-const { ObjectId } = require('mongodb');
+import { ObjectId } from 'mongodb';
 const { getCollections } = require('../../config/connectMongodb');
 const admin = require('../../config/firebaseAdmin');
 const { createHttpError } = require('../finance/finance.utils');
@@ -7,7 +6,49 @@ const { assertAllowedRole } = require('../shared/service-rules');
 
 const VALID_ROLES = ['admin', 'manager', 'member', 'moderator', 'staff', 'super_admin'];
 
-const registerOrSyncUser = async (payload, firebaseUserToken) => {
+type UserRole = typeof VALID_ROLES[number];
+
+type UserRecord = {
+  _id?: ObjectId;
+  firebaseUid?: string;
+  email?: string;
+  emailVerified?: boolean;
+  displayName?: string;
+  phoneNumber?: string;
+  photoURL?: string;
+  providers?: string[];
+  name?: string;
+  building?: string;
+  room?: string;
+  mobile?: string;
+  bank?: string;
+  designation?: string;
+  department?: string;
+  role?: UserRole;
+  fixedDeposit?: number;
+  mosqueFee?: number;
+  createdAt?: Date;
+  updatedAt?: Date;
+  lastSyncedAt?: Date;
+};
+
+type UserPayload = {
+  name?: string;
+  building?: string;
+  room?: string;
+  email?: string;
+  mobile?: string;
+  designation?: string;
+  bank?: string;
+  department?: string;
+};
+
+type FirebaseToken = {
+  uid?: string;
+  email?: string;
+};
+
+const registerOrSyncUser = async (payload: UserPayload, firebaseUserToken: FirebaseToken) => {
   const { name, building, room, email, mobile, designation, bank, department } = payload;
   const firebaseUid = firebaseUserToken?.uid;
   const tokenEmail = firebaseUserToken?.email;
@@ -31,7 +72,7 @@ const registerOrSyncUser = async (payload, firebaseUserToken) => {
       { email: tokenEmail },
       { firebaseUid }
     ]
-  });
+  }) as UserRecord | null;
 
   const now = new Date();
   const syncData = {
@@ -59,7 +100,7 @@ const registerOrSyncUser = async (payload, firebaseUserToken) => {
     };
 
     await users.updateOne({ _id: existingUser._id }, { $set: updateData });
-    const user = await users.findOne({ _id: existingUser._id });
+    const user = await users.findOne({ _id: existingUser._id }) as UserRecord | null;
 
     return {
       status: 200,
@@ -69,7 +110,7 @@ const registerOrSyncUser = async (payload, firebaseUserToken) => {
     };
   }
 
-  const newUser = {
+  const newUser: UserRecord = {
     firebaseUid,
     email: firebaseUser.email || tokenEmail,
     emailVerified: Boolean(firebaseUser.emailVerified),
@@ -102,9 +143,9 @@ const registerOrSyncUser = async (payload, firebaseUserToken) => {
   };
 };
 
-const getUserProfileByEmail = async (email) => {
+const getUserProfileByEmail = async (email: string) => {
   const { users } = await getCollections();
-  const user = await users.findOne({ email });
+  const user = await users.findOne({ email }) as UserRecord | null;
 
   if (!user) {
     throw createHttpError(404, 'User not found');
@@ -113,9 +154,9 @@ const getUserProfileByEmail = async (email) => {
   return user;
 };
 
-const updateUserProfileByEmail = async (email, payload) => {
+const updateUserProfileByEmail = async (email: string, payload: UserPayload) => {
   const { name, building, room, mobile, designation, department } = payload;
-  const updateData = { updatedAt: new Date() };
+  const updateData: Partial<UserRecord> = { updatedAt: new Date() };
 
   if (name) updateData.name = name;
   if (building) updateData.building = building;
@@ -129,7 +170,7 @@ const updateUserProfileByEmail = async (email, payload) => {
     { email },
     { $set: updateData },
     { returnDocument: 'after' }
-  );
+  ) as UserRecord | null;
 
   if (!user) {
     throw createHttpError(404, 'User not found');
@@ -138,7 +179,7 @@ const updateUserProfileByEmail = async (email, payload) => {
   return user;
 };
 
-const updateUserRoleById = async (userId, role, currentUserRole) => {
+const updateUserRoleById = async (userId: string, role: UserRole, currentUserRole: string) => {
   assertAllowedRole(currentUserRole, ['admin', 'manager'], 'Only admins and managers can update user roles');
 
   if (!ObjectId.isValid(userId)) {
@@ -163,7 +204,7 @@ const updateUserRoleById = async (userId, role, currentUserRole) => {
   return user;
 };
 
-const updateFixedDepositByUserId = async (userId, fixedDeposit, currentUserRole) => {
+const updateFixedDepositByUserId = async (userId: string, fixedDeposit: number, currentUserRole: string) => {
   if (!ObjectId.isValid(userId)) {
     throw createHttpError(400, 'Invalid user ID');
   }
@@ -175,7 +216,7 @@ const updateFixedDepositByUserId = async (userId, fixedDeposit, currentUserRole)
     { _id: new ObjectId(userId) },
     { $set: { fixedDeposit, updatedAt: new Date() } },
     { returnDocument: 'after' }
-  );
+  ) as UserRecord | null;
 
   if (!user) {
     throw createHttpError(404, 'User not found');
@@ -184,7 +225,7 @@ const updateFixedDepositByUserId = async (userId, fixedDeposit, currentUserRole)
   return user;
 };
 
-const updateMosqueFeeByUserId = async (userId, mosqueFee, currentUserRole) => {
+const updateMosqueFeeByUserId = async (userId: string, mosqueFee: number, currentUserRole: string) => {
   if (!ObjectId.isValid(userId)) {
     throw createHttpError(400, 'Invalid user ID');
   }
@@ -196,7 +237,7 @@ const updateMosqueFeeByUserId = async (userId, mosqueFee, currentUserRole) => {
     { _id: new ObjectId(userId) },
     { $set: { mosqueFee, updatedAt: new Date() } },
     { returnDocument: 'after' }
-  );
+  ) as UserRecord | null;
 
   if (!user) {
     throw createHttpError(404, 'User not found');
@@ -205,26 +246,26 @@ const updateMosqueFeeByUserId = async (userId, mosqueFee, currentUserRole) => {
   return user;
 };
 
-const listUsers = async ({ role, department }) => {
-  const query = {};
+const listUsers = async ({ role, department }: { role?: UserRole; department?: string }) => {
+  const query: { role?: UserRole; department?: string } = {};
 
   if (role && VALID_ROLES.includes(role)) query.role = role;
   if (department) query.department = department;
 
   const { users } = await getCollections();
-  const usersList = await users.find(query).sort({ room: 1 }).toArray();
+  const usersList = await users.find(query).sort({ room: 1 }).toArray() as UserRecord[];
   const totalFixedDeposit = usersList.reduce((sum, user) => sum + (user.fixedDeposit || 0), 0);
 
   return { count: usersList.length, users: usersList, totalFixedDeposit };
 };
 
-const getRoleByEmail = async (email) => {
+const getRoleByEmail = async (email: string) => {
   if (!email) {
     throw createHttpError(400, 'Email is required');
   }
 
   const { users } = await getCollections();
-  const user = await users.findOne({ email });
+  const user = await users.findOne({ email }) as UserRecord | null;
 
   if (!user) {
     throw createHttpError(404, 'User not found');
@@ -233,18 +274,18 @@ const getRoleByEmail = async (email) => {
   return { role: user.role };
 };
 
-const checkUserExistsByEmail = async (email) => {
+const checkUserExistsByEmail = async (email: string) => {
   if (!email) {
     throw createHttpError(400, 'Email is required');
   }
 
   const { users } = await getCollections();
-  const user = await users.findOne({ email });
+  const user = await users.findOne({ email }) as UserRecord | null;
 
   return { doesExist: Boolean(user) };
 };
 
-module.exports = {
+export = {
   registerOrSyncUser,
   getUserProfileByEmail,
   updateUserProfileByEmail,

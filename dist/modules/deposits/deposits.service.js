@@ -1,7 +1,5 @@
 "use strict";
-Object.defineProperty(exports, "__esModule", { value: true });
-// @ts-nocheck
-const { ObjectId } = require('mongodb');
+const mongodb_1 = require("mongodb");
 const { getCollections, withMongoTransaction } = require('../../config/connectMongodb');
 const { createHttpError } = require('../finance/finance.utils');
 const { formatServiceDate, getCurrentServiceDate, normalizeBusinessDateFields, serviceDateToLegacyDate } = require('../shared/date.utils');
@@ -19,7 +17,7 @@ const addDepositForUser = async ({ userId, amount, month, depositDate, notes }, 
     }
     return withMongoTransaction(async (session) => {
         const { users, deposits, memberBalances, monthlyFinalization } = await getCollections();
-        const user = await users.findOne({ _id: new ObjectId(userId) }, { session });
+        const user = await users.findOne({ _id: new mongodb_1.ObjectId(userId) }, { session });
         if (!user) {
             throw createHttpError(404, 'User not found');
         }
@@ -56,7 +54,7 @@ const getMonthlyDepositForCurrentUser = async (userId, month) => {
         { $match: { userId, month } },
         { $group: { _id: null, total: { $sum: '$amount' }, lastUpdated: { $max: '$depositDate' } } }
     ]).toArray();
-    const user = await users.findOne({ _id: new ObjectId(userId) });
+    const user = await users.findOne({ _id: new mongodb_1.ObjectId(userId) });
     if (!user) {
         throw createHttpError(404, 'User not found');
     }
@@ -79,8 +77,8 @@ const listDeposits = async ({ month, userId }) => {
     const { users, deposits } = await getCollections();
     const allDeposits = await deposits.find(query).sort({ serviceDate: -1, createdAt: -1 }).toArray();
     const userIds = [...new Set(allDeposits.map(deposit => deposit.userId))]
-        .filter(id => ObjectId.isValid(id))
-        .map(id => new ObjectId(id));
+        .filter(id => mongodb_1.ObjectId.isValid(id))
+        .map(id => new mongodb_1.ObjectId(id));
     const usersList = await users.find({ _id: { $in: userIds } }).toArray();
     const usersMap = {};
     for (const user of usersList) {
@@ -100,12 +98,12 @@ const listDeposits = async ({ month, userId }) => {
     return { count: depositsWithUsers.length, totalDeposit, deposits: depositsWithUsers };
 };
 const updateDepositById = async (depositId, { amount, month, depositDate, notes }) => {
-    if (!ObjectId.isValid(depositId)) {
+    if (!mongodb_1.ObjectId.isValid(depositId)) {
         throw createHttpError(400, 'Invalid deposit ID');
     }
     return withMongoTransaction(async (session) => {
         const { deposits, memberBalances, monthlyFinalization } = await getCollections();
-        const existingDeposit = await deposits.findOne({ _id: new ObjectId(depositId) }, { session });
+        const existingDeposit = await deposits.findOne({ _id: new mongodb_1.ObjectId(depositId) }, { session });
         if (!existingDeposit) {
             throw createHttpError(404, 'Deposit not found');
         }
@@ -130,25 +128,25 @@ const updateDepositById = async (depositId, { amount, month, depositDate, notes 
         }
         if (notes !== undefined)
             updateData.notes = notes;
-        await deposits.updateOne({ _id: new ObjectId(depositId) }, { $set: updateData }, { session });
+        await deposits.updateOne({ _id: new mongodb_1.ObjectId(depositId) }, { $set: updateData }, { session });
         if (amountDifference !== 0) {
             await memberBalances.updateOne({ userId: existingDeposit.userId }, { $inc: { balance: amountDifference }, $set: { lastUpdated: now } }, { session });
         }
     });
 };
 const deleteDepositById = async (depositId) => {
-    if (!ObjectId.isValid(depositId)) {
+    if (!mongodb_1.ObjectId.isValid(depositId)) {
         throw createHttpError(400, 'Invalid deposit ID');
     }
     return withMongoTransaction(async (session) => {
         const { deposits, memberBalances, monthlyFinalization } = await getCollections();
-        const existingDeposit = await deposits.findOne({ _id: new ObjectId(depositId) }, { session });
+        const existingDeposit = await deposits.findOne({ _id: new mongodb_1.ObjectId(depositId) }, { session });
         if (!existingDeposit) {
             throw createHttpError(404, 'Deposit not found');
         }
         await assertMonthIsNotFinalized(monthlyFinalization, existingDeposit.month, { session });
         const now = new Date();
-        await deposits.deleteOne({ _id: new ObjectId(depositId) }, { session });
+        await deposits.deleteOne({ _id: new mongodb_1.ObjectId(depositId) }, { session });
         await memberBalances.updateOne({ userId: existingDeposit.userId }, { $inc: { balance: -existingDeposit.amount }, $set: { lastUpdated: now } }, { session });
     });
 };

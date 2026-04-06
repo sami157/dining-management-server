@@ -1,39 +1,54 @@
-// @ts-nocheck
-const { DateTime } = require('luxon');
+import { DateTime } from 'luxon';
 const { getCollections } = require('../../config/connectMongodb');
 const { BUSINESS_TIMEZONE, serviceDateToBusinessDayStartUtc } = require('../shared/date.utils');
 
 const DEADLINE_CONFIG_KEY = 'global';
-const MEAL_TYPES = ['morning', 'evening', 'night'];
+const MEAL_TYPES = ['morning', 'evening', 'night'] as const;
 const DEFAULT_MEAL_DEADLINES = {
   morning: { hour: 22, minute: 0, dayOffset: -1 },
   evening: { hour: 8, minute: 0, dayOffset: 0 },
   night: { hour: 14, minute: 0, dayOffset: 0 }
 };
 
-const cloneDefaultConfig = () => JSON.parse(JSON.stringify(DEFAULT_MEAL_DEADLINES));
+type MealDeadlineType = typeof MEAL_TYPES[number];
+type MealDeadlineRule = {
+  hour: number;
+  minute: number;
+  dayOffset: number;
+};
 
-const validateSingleMealDeadline = (mealType, config) => {
+type MealDeadlineConfig = Record<MealDeadlineType, MealDeadlineRule> & {
+  updatedAt?: Date;
+  updatedBy?: unknown;
+  createdAt?: Date;
+  key?: string;
+};
+
+const cloneDefaultConfig = (): MealDeadlineConfig => JSON.parse(JSON.stringify(DEFAULT_MEAL_DEADLINES));
+
+const validateSingleMealDeadline = (mealType: MealDeadlineType, config: unknown) => {
   if (!config || typeof config !== 'object' || Array.isArray(config)) {
     return `${mealType} must be an object`;
   }
 
-  if (!Number.isInteger(config.hour) || config.hour < 0 || config.hour > 23) {
+  const rule = config as Partial<MealDeadlineRule>;
+
+  if (!Number.isInteger(rule.hour) || rule.hour < 0 || rule.hour > 23) {
     return `${mealType}.hour must be an integer between 0 and 23`;
   }
 
-  if (!Number.isInteger(config.minute) || config.minute < 0 || config.minute > 59) {
+  if (!Number.isInteger(rule.minute) || rule.minute < 0 || rule.minute > 59) {
     return `${mealType}.minute must be an integer between 0 and 59`;
   }
 
-  if (!Number.isInteger(config.dayOffset)) {
+  if (!Number.isInteger(rule.dayOffset)) {
     return `${mealType}.dayOffset must be an integer`;
   }
 
   return null;
 };
 
-const validateMealDeadlineConfig = (config) => {
+const validateMealDeadlineConfig = (config: unknown) => {
   if (!config || typeof config !== 'object' || Array.isArray(config)) {
     return 'Meal deadline config must be an object';
   }
@@ -52,7 +67,7 @@ const validateMealDeadlineConfig = (config) => {
   return null;
 };
 
-const ensureMealDeadlineConfig = async () => {
+const ensureMealDeadlineConfig = async (): Promise<MealDeadlineConfig> => {
   const { mealDeadlines } = await getCollections();
   const now = new Date();
   const defaultConfig = cloneDefaultConfig();
@@ -70,7 +85,7 @@ const ensureMealDeadlineConfig = async () => {
     { upsert: true }
   );
 
-  return mealDeadlines.findOne({ key: DEADLINE_CONFIG_KEY });
+  return mealDeadlines.findOne({ key: DEADLINE_CONFIG_KEY }) as Promise<MealDeadlineConfig>;
 };
 
 const getMealDeadlineConfig = async () => {
@@ -85,7 +100,7 @@ const getMealDeadlineConfig = async () => {
   };
 };
 
-const updateMealDeadlineConfig = async (config, updatedBy) => {
+const updateMealDeadlineConfig = async (config: MealDeadlineConfig, updatedBy: unknown) => {
   const validationError = validateMealDeadlineConfig(config);
   if (validationError) {
     throw new Error(validationError);
@@ -113,12 +128,17 @@ const updateMealDeadlineConfig = async (config, updatedBy) => {
   return getMealDeadlineConfig();
 };
 
-const calculateMealDeadline = (mealDate, mealType, customDeadline, mealDeadlineConfig) => {
+const calculateMealDeadline = (
+  mealDate: string | Date,
+  mealType: MealDeadlineType | string,
+  customDeadline: string | Date | null,
+  mealDeadlineConfig: MealDeadlineConfig
+) => {
   if (customDeadline) {
     return new Date(customDeadline);
   }
 
-  const config = mealDeadlineConfig?.[mealType];
+  const config = mealDeadlineConfig?.[mealType as MealDeadlineType];
   if (!config) {
     throw new Error(`No deadline config found for meal type: ${mealType}`);
   }
@@ -134,7 +154,7 @@ const calculateMealDeadline = (mealDate, mealType, customDeadline, mealDeadlineC
     .toJSDate();
 };
 
-module.exports = {
+export = {
   MEAL_TYPES,
   DEFAULT_MEAL_DEADLINES,
   validateMealDeadlineConfig,

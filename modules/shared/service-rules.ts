@@ -1,20 +1,19 @@
-// @ts-nocheck
 const { createHttpError } = require('../../middleware/errorHandler');
 const { calculateMealDeadline } = require('../meal-deadlines/meal-deadlines.service');
 
-const hasAllowedRole = (currentRole, allowedRoles = []) => {
+const hasAllowedRole = (currentRole: string | undefined, allowedRoles: string[] = []) => {
   return allowedRoles.includes(currentRole);
 };
 
-const assertAllowedRole = (currentRole, allowedRoles = [], message = 'You are not authorized') => {
+const assertAllowedRole = (currentRole: string | undefined, allowedRoles: string[] = [], message = 'You are not authorized') => {
   if (!hasAllowedRole(currentRole, allowedRoles)) {
     throw createHttpError(403, message);
   }
 };
 
-const isPrivilegedRole = (currentRole) => hasAllowedRole(currentRole, ['admin', 'super_admin']);
+const isPrivilegedRole = (currentRole: string | undefined) => hasAllowedRole(currentRole, ['admin', 'super_admin']);
 
-const assertMonthIsNotFinalized = async (monthlyFinalization, month, options = {}) => {
+const assertMonthIsNotFinalized = async (monthlyFinalization: any, month: string, options = {}) => {
   const finalized = await monthlyFinalization.findOne({ month }, options);
   if (finalized) {
     throw createHttpError(400, `Cannot modify records for ${month} - month is already finalized`);
@@ -27,6 +26,12 @@ const assertMealDeadlineNotPassed = ({
   customDeadline = null,
   mealDeadlineConfig,
   message
+}: {
+  serviceDate: string;
+  mealType: string;
+  customDeadline?: string | Date | null;
+  mealDeadlineConfig: unknown;
+  message: string;
 }) => {
   const deadline = calculateMealDeadline(serviceDate, mealType, customDeadline, mealDeadlineConfig);
 

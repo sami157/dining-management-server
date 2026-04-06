@@ -1,18 +1,19 @@
 "use strict";
-Object.defineProperty(exports, "__esModule", { value: true });
-// @ts-nocheck
-const dotenv = require('dotenv');
-const { MongoClient, ServerApiVersion } = require('mongodb');
+const dotenv = require("dotenv");
+const mongodb_1 = require("mongodb");
 dotenv.config();
 const uri = process.env.MONGODB_URI;
+if (!uri) {
+    throw new Error('MONGODB_URI is required');
+}
 let client;
 let dbInstance;
 const connectMongoDB = async () => {
     if (dbInstance)
         return dbInstance; // reuse if already connected
-    client = new MongoClient(uri, {
+    client = new mongodb_1.MongoClient(uri, {
         serverApi: {
-            version: ServerApiVersion.v1,
+            version: mongodb_1.ServerApiVersion.v1,
             strict: true,
             deprecationErrors: true,
         },
@@ -25,6 +26,9 @@ const connectMongoDB = async () => {
 };
 const getMongoClient = async () => {
     await connectMongoDB();
+    if (!client) {
+        throw new Error('Mongo client was not initialized');
+    }
     return client;
 };
 const withMongoTransaction = async (work) => {

@@ -1,5 +1,4 @@
 "use strict";
-// @ts-nocheck
 const { createHttpError } = require('../../middleware/errorHandler');
 const { calculateMealDeadline } = require('../meal-deadlines/meal-deadlines.service');
 const hasAllowedRole = (currentRole, allowedRoles = []) => {

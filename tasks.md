@@ -2,43 +2,7 @@
 
 ## High Priority
 
-### Financial Consistency
-
-- Make balance writes transactional.
-  - Use MongoDB transactions for deposit add/update/delete and month finalization so partial failures do not leave `memberBalances` out of sync.
-
-- Recheck fallback balance lookups.
-  - Fix places where `_id` is queried with a string instead of `ObjectId`, especially `getMyBalance`.
-
-- Clarify balance semantics in code.
-  - Document that deposits update `memberBalances` immediately and monthly finalization consumes the current balance snapshot rather than re-applying deposits.
-
-### Auth Middleware
-
-- Refine auth failure semantics.
-  - Distinguish invalid Firebase token, missing app user, and role mismatch more explicitly.
-  - Consider returning stable machine-readable error codes from auth middleware.
-
-### Business-Rule Validation
-
-- Add schema validation deeper in the service layer where necessary.
-  - Route-level Zod validation is now in place, but business-rule validation still lives ad hoc inside services.
-
-- Extract repeated business-rule checks into shared helpers.
-  - Especially deadline checks, finalized-month restrictions, and role-based action constraints.
-
 ## Medium Priority
-
-### TypeScript Completion
-
-- Remove remaining `// @ts-nocheck` usage from core files and services.
-  - Current holdouts include `index.ts`, Mongo/Firebase config, and most service files.
-
-- Add real shared domain types.
-  - Define reusable types for users, schedules, registrations, deposits, expenses, balances, and finalization records instead of relying on implicit Mongo shapes.
-
-- Reduce `any`/loose typing at integration boundaries.
-  - Tighten places like Firebase admin access and Mongo collection results so the typed route/controller layer is backed by typed services.
 
 ### Business Logic Cleanup
 

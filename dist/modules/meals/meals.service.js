@@ -1,7 +1,5 @@
 "use strict";
-Object.defineProperty(exports, "__esModule", { value: true });
-// @ts-nocheck
-const { ObjectId } = require('mongodb');
+const mongodb_1 = require("mongodb");
 const { getCollections } = require('../../config/connectMongodb');
 const { createHttpError } = require('../finance/finance.utils');
 const { formatServiceDate, getMonthServiceDateRange, normalizeBusinessDateFields, serviceDateToLegacyDate } = require('../shared/date.utils');
@@ -73,7 +71,7 @@ const createMealRegistration = async (payload, currentUser) => {
     const currentTime = new Date();
     if (requestUserId) {
         assertAllowedRole(currentUser.role, ['admin', 'super_admin'], 'Not authorized to register for others');
-        userId = new ObjectId(requestUserId);
+        userId = new mongodb_1.ObjectId(requestUserId);
     }
     if (!date || !mealType) {
         throw createHttpError(400, 'date and mealType are required');
@@ -123,7 +121,7 @@ const createMealRegistration = async (payload, currentUser) => {
     }
     if (isLateRegistration) {
         const [byPerson, forPerson] = await Promise.all([
-            users.findOne({ _id: new ObjectId(currentUser?._id) }, { projection: { name: 1 } }),
+            users.findOne({ _id: new mongodb_1.ObjectId(currentUser?._id) }, { projection: { name: 1 } }),
             users.findOne({ _id: userId }, { projection: { name: 1 } })
         ]);
         await systemLogs.insertOne({
@@ -140,7 +138,7 @@ const createMealRegistration = async (payload, currentUser) => {
     };
 };
 const editMealRegistration = async (registrationId, numberOfMeals, currentUser) => {
-    if (!ObjectId.isValid(registrationId)) {
+    if (!mongodb_1.ObjectId.isValid(registrationId)) {
         throw createHttpError(400, 'Invalid registration ID');
     }
     if (!numberOfMeals || typeof numberOfMeals !== 'number' || numberOfMeals < 1) {
@@ -148,7 +146,7 @@ const editMealRegistration = async (registrationId, numberOfMeals, currentUser) 
     }
     const { mealRegistrations, mealSchedules } = await getCollections();
     const mealDeadlineConfig = await getMealDeadlineConfig();
-    const registration = await mealRegistrations.findOne({ _id: new ObjectId(registrationId) });
+    const registration = await mealRegistrations.findOne({ _id: new mongodb_1.ObjectId(registrationId) });
     if (!registration) {
         throw createHttpError(404, 'Registration not found');
     }
@@ -170,16 +168,16 @@ const editMealRegistration = async (registrationId, numberOfMeals, currentUser) 
             message: 'Deadline has passed. Changes are no longer allowed.'
         });
     }
-    await mealRegistrations.updateOne({ _id: new ObjectId(registrationId) }, { $set: { numberOfMeals, updatedAt: new Date() } });
+    await mealRegistrations.updateOne({ _id: new mongodb_1.ObjectId(registrationId) }, { $set: { numberOfMeals, updatedAt: new Date() } });
 };
 const removeMealRegistration = async (registrationId, currentUser) => {
-    if (!ObjectId.isValid(registrationId)) {
+    if (!mongodb_1.ObjectId.isValid(registrationId)) {
         throw createHttpError(400, 'Invalid registration ID');
     }
     const { users, mealRegistrations, mealSchedules, systemLogs } = await getCollections();
     const mealDeadlineConfig = await getMealDeadlineConfig();
     const user = await users.findOne({ _id: currentUser?._id });
-    const registration = await mealRegistrations.findOne({ _id: new ObjectId(registrationId) });
+    const registration = await mealRegistrations.findOne({ _id: new mongodb_1.ObjectId(registrationId) });
     if (!registration) {
         throw createHttpError(404, 'Registration not found');
     }
@@ -203,7 +201,7 @@ const removeMealRegistration = async (registrationId, currentUser) => {
     }
     if (!isOwner) {
         const [byPerson, forPerson] = await Promise.all([
-            users.findOne({ _id: new ObjectId(currentUser?._id) }, { projection: { name: 1 } }),
+            users.findOne({ _id: new mongodb_1.ObjectId(currentUser?._id) }, { projection: { name: 1 } }),
             users.findOne({ _id: registration.userId }, { projection: { name: 1 } })
         ]);
         await systemLogs.insertOne({
@@ -215,7 +213,7 @@ const removeMealRegistration = async (registrationId, currentUser) => {
             cancelledAt: new Date()
         });
     }
-    await mealRegistrations.deleteOne({ _id: new ObjectId(registrationId) });
+    await mealRegistrations.deleteOne({ _id: new mongodb_1.ObjectId(registrationId) });
 };
 const getMealTotalsForUser = async (email, month) => {
     const { users, mealRegistrations, mealSchedules } = await getCollections();

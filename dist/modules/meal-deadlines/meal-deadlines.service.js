@@ -1,7 +1,5 @@
 "use strict";
-Object.defineProperty(exports, "__esModule", { value: true });
-// @ts-nocheck
-const { DateTime } = require('luxon');
+const luxon_1 = require("luxon");
 const { getCollections } = require('../../config/connectMongodb');
 const { BUSINESS_TIMEZONE, serviceDateToBusinessDayStartUtc } = require('../shared/date.utils');
 const DEADLINE_CONFIG_KEY = 'global';
@@ -16,13 +14,14 @@ const validateSingleMealDeadline = (mealType, config) => {
     if (!config || typeof config !== 'object' || Array.isArray(config)) {
         return `${mealType} must be an object`;
     }
-    if (!Number.isInteger(config.hour) || config.hour < 0 || config.hour > 23) {
+    const rule = config;
+    if (!Number.isInteger(rule.hour) || rule.hour < 0 || rule.hour > 23) {
         return `${mealType}.hour must be an integer between 0 and 23`;
     }
-    if (!Number.isInteger(config.minute) || config.minute < 0 || config.minute > 59) {
+    if (!Number.isInteger(rule.minute) || rule.minute < 0 || rule.minute > 59) {
         return `${mealType}.minute must be an integer between 0 and 59`;
     }
-    if (!Number.isInteger(config.dayOffset)) {
+    if (!Number.isInteger(rule.dayOffset)) {
         return `${mealType}.dayOffset must be an integer`;
     }
     return null;
@@ -95,8 +94,8 @@ const calculateMealDeadline = (mealDate, mealType, customDeadline, mealDeadlineC
         throw new Error(`No deadline config found for meal type: ${mealType}`);
     }
     const businessDay = typeof mealDate === 'string'
-        ? DateTime.fromJSDate(serviceDateToBusinessDayStartUtc(mealDate), { zone: 'utc' }).setZone(BUSINESS_TIMEZONE)
-        : DateTime.fromJSDate(mealDate, { zone: 'utc' }).setZone(BUSINESS_TIMEZONE);
+        ? luxon_1.DateTime.fromJSDate(serviceDateToBusinessDayStartUtc(mealDate), { zone: 'utc' }).setZone(BUSINESS_TIMEZONE)
+        : luxon_1.DateTime.fromJSDate(mealDate, { zone: 'utc' }).setZone(BUSINESS_TIMEZONE);
     return businessDay
         .plus({ days: config.dayOffset })
         .set({ hour: config.hour, minute: config.minute, second: 0, millisecond: 0 })

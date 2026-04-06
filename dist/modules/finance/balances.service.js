@@ -1,7 +1,5 @@
 "use strict";
-Object.defineProperty(exports, "__esModule", { value: true });
-// @ts-nocheck
-const { ObjectId } = require('mongodb');
+const mongodb_1 = require("mongodb");
 const { getCollections } = require('../../config/connectMongodb');
 const { createHttpError } = require('./finance.utils');
 const normalizeUserId = (value) => {
@@ -17,17 +15,17 @@ const normalizeUserId = (value) => {
     throw createHttpError(400, 'Invalid user ID');
 };
 const getUserProjectionById = async (users, userId) => {
-    if (!ObjectId.isValid(userId)) {
+    if (!mongodb_1.ObjectId.isValid(userId)) {
         throw createHttpError(400, 'Invalid user ID');
     }
-    return users.findOne({ _id: new ObjectId(userId) });
+    return users.findOne({ _id: new mongodb_1.ObjectId(userId) });
 };
 const listBalances = async () => {
     const { users, memberBalances } = await getCollections();
     const allBalances = await memberBalances.find({}).toArray();
     const userIds = allBalances
-        .filter(balance => ObjectId.isValid(balance.userId))
-        .map(balance => new ObjectId(balance.userId));
+        .filter(balance => mongodb_1.ObjectId.isValid(balance.userId))
+        .map(balance => new mongodb_1.ObjectId(balance.userId));
     const usersList = await users.find({ _id: { $in: userIds } }).toArray();
     const usersMap = {};
     for (const user of usersList) {

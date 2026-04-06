@@ -1,7 +1,5 @@
 "use strict";
-Object.defineProperty(exports, "__esModule", { value: true });
-// @ts-nocheck
-const { ObjectId } = require('mongodb');
+const mongodb_1 = require("mongodb");
 const { getCollections } = require('../../config/connectMongodb');
 const admin = require('../../config/firebaseAdmin');
 const { createHttpError } = require('../finance/finance.utils');
@@ -122,38 +120,38 @@ const updateUserProfileByEmail = async (email, payload) => {
 };
 const updateUserRoleById = async (userId, role, currentUserRole) => {
     assertAllowedRole(currentUserRole, ['admin', 'manager'], 'Only admins and managers can update user roles');
-    if (!ObjectId.isValid(userId)) {
+    if (!mongodb_1.ObjectId.isValid(userId)) {
         throw createHttpError(400, 'Invalid user ID');
     }
     if (!role || !VALID_ROLES.includes(role)) {
         throw createHttpError(400, `role must be one of: ${VALID_ROLES.join(', ')}`);
     }
     const { users } = await getCollections();
-    const user = await users.findOneAndUpdate({ _id: new ObjectId(userId) }, { $set: { role, updatedAt: new Date() } }, { returnDocument: 'after' });
+    const user = await users.findOneAndUpdate({ _id: new mongodb_1.ObjectId(userId) }, { $set: { role, updatedAt: new Date() } }, { returnDocument: 'after' });
     if (!user) {
         throw createHttpError(404, 'User not found');
     }
     return user;
 };
 const updateFixedDepositByUserId = async (userId, fixedDeposit, currentUserRole) => {
-    if (!ObjectId.isValid(userId)) {
+    if (!mongodb_1.ObjectId.isValid(userId)) {
         throw createHttpError(400, 'Invalid user ID');
     }
     assertAllowedRole(currentUserRole, ['admin', 'super_admin']);
     const { users } = await getCollections();
-    const user = await users.findOneAndUpdate({ _id: new ObjectId(userId) }, { $set: { fixedDeposit, updatedAt: new Date() } }, { returnDocument: 'after' });
+    const user = await users.findOneAndUpdate({ _id: new mongodb_1.ObjectId(userId) }, { $set: { fixedDeposit, updatedAt: new Date() } }, { returnDocument: 'after' });
     if (!user) {
         throw createHttpError(404, 'User not found');
     }
     return user;
 };
 const updateMosqueFeeByUserId = async (userId, mosqueFee, currentUserRole) => {
-    if (!ObjectId.isValid(userId)) {
+    if (!mongodb_1.ObjectId.isValid(userId)) {
         throw createHttpError(400, 'Invalid user ID');
     }
     assertAllowedRole(currentUserRole, ['admin', 'super_admin']);
     const { users } = await getCollections();
-    const user = await users.findOneAndUpdate({ _id: new ObjectId(userId) }, { $set: { mosqueFee, updatedAt: new Date() } }, { returnDocument: 'after' });
+    const user = await users.findOneAndUpdate({ _id: new mongodb_1.ObjectId(userId) }, { $set: { mosqueFee, updatedAt: new Date() } }, { returnDocument: 'after' });
     if (!user) {
         throw createHttpError(404, 'User not found');
     }

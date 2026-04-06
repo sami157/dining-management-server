@@ -1,6 +1,4 @@
 "use strict";
-Object.defineProperty(exports, "__esModule", { value: true });
-// @ts-nocheck
 const { getCollections, withMongoTransaction } = require('../../config/connectMongodb');
 const { createHttpError } = require('../finance/finance.utils');
 const { formatServiceDate, getCurrentServiceDate, getMonthServiceDateRange } = require('../shared/date.utils');

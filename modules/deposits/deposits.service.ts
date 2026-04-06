@@ -1,5 +1,4 @@
-// @ts-nocheck
-const { ObjectId } = require('mongodb');
+import { ObjectId, type ClientSession } from 'mongodb';
 const { getCollections, withMongoTransaction } = require('../../config/connectMongodb');
 const { createHttpError } = require('../finance/finance.utils');
 const {
@@ -10,7 +9,52 @@ const {
 } = require('../shared/date.utils');
 const { assertMonthIsNotFinalized } = require('../shared/service-rules');
 
-const addDepositForUser = async ({ userId, amount, month, depositDate, notes }, managerId) => {
+type DepositRecord = {
+  _id?: ObjectId;
+  userId: string;
+  amount: number;
+  month: string;
+  depositDate: Date;
+  serviceDate: string;
+  notes: string;
+  addedBy?: unknown;
+  createdAt: Date;
+  createdDate: string;
+  updatedAt?: Date;
+};
+
+type BalanceRecord = {
+  userId: string;
+  balance: number;
+  lastUpdated: Date;
+  createdAt?: Date;
+};
+
+type UserRecord = {
+  _id: ObjectId;
+  name?: string;
+  email?: string;
+};
+
+type DepositPayload = {
+  userId?: string;
+  amount?: number;
+  month?: string;
+  depositDate?: string;
+  notes?: string;
+};
+
+type DepositAggregation = {
+  total: number;
+  lastUpdated: Date | null;
+};
+
+type DepositListQuery = {
+  month?: string;
+  userId?: string;
+};
+
+const addDepositForUser = async ({ userId, amount, month, depositDate, notes }: DepositPayload, managerId: unknown) => {
   if (!userId || !amount || !month) {
     throw createHttpError(400, 'userId, amount, and month are required');
   }
@@ -24,9 +68,9 @@ const addDepositForUser = async ({ userId, amount, month, depositDate, notes }, 
     throw createHttpError(400, 'month must be in YYYY-MM format (e.g., 2025-01)');
   }
 
-  return withMongoTransaction(async (session) => {
+  return withMongoTransaction(async (session: ClientSession) => {
     const { users, deposits, memberBalances, monthlyFinalization } = await getCollections();
-    const user = await users.findOne({ _id: new ObjectId(userId) }, { session });
+    const user = await users.findOne({ _id: new ObjectId(userId) }, { session }) as UserRecord | null;
     if (!user) {
       throw createHttpError(404, 'User not found');
     }
@@ -36,7 +80,7 @@ const addDepositForUser = async ({ userId, amount, month, depositDate, notes }, 
     const now = new Date();
     const createdDate = getCurrentServiceDate();
     const serviceDate = depositDate ? formatServiceDate(depositDate) : createdDate;
-    const deposit = {
+    const deposit: DepositRecord = {
       userId,
       amount,
       month,
@@ -67,15 +111,15 @@ const addDepositForUser = async ({ userId, amount, month, depositDate, notes }, 
   });
 };
 
-const getMonthlyDepositForCurrentUser = async (userId, month) => {
+const getMonthlyDepositForCurrentUser = async (userId: string, month: string) => {
   const { users, deposits } = await getCollections();
 
   const [aggregation] = await deposits.aggregate([
     { $match: { userId, month } },
     { $group: { _id: null, total: { $sum: '$amount' }, lastUpdated: { $max: '$depositDate' } } }
-  ]).toArray();
+  ]).toArray() as DepositAggregation[];
 
-  const user = await users.findOne({ _id: new ObjectId(userId) });
+  const user = await users.findOne({ _id: new ObjectId(userId) }) as UserRecord | null;
   if (!user) {
     throw createHttpError(404, 'User not found');
   }
@@ -91,20 +135,20 @@ const getMonthlyDepositForCurrentUser = async (userId, month) => {
   };
 };
 
-const listDeposits = async ({ month, userId }) => {
-  const query = {};
+const listDeposits = async ({ month, userId }: { month?: string; userId?: string }) => {
+  const query: DepositListQuery = {};
   if (month) query.month = month;
   if (userId) query.userId = userId;
 
   const { users, deposits } = await getCollections();
-  const allDeposits = await deposits.find(query).sort({ serviceDate: -1, createdAt: -1 }).toArray();
+  const allDeposits = await deposits.find(query).sort({ serviceDate: -1, createdAt: -1 }).toArray() as DepositRecord[];
 
   const userIds = [...new Set(allDeposits.map(deposit => deposit.userId))]
     .filter(id => ObjectId.isValid(id))
     .map(id => new ObjectId(id));
 
-  const usersList = await users.find({ _id: { $in: userIds } }).toArray();
-  const usersMap = {};
+  const usersList = await users.find({ _id: { $in: userIds } }).toArray() as UserRecord[];
+  const usersMap: Record<string, UserRecord> = {};
   for (const user of usersList) {
     usersMap[user._id.toString()] = user;
   }
@@ -124,14 +168,14 @@ const listDeposits = async ({ month, userId }) => {
   return { count: depositsWithUsers.length, totalDeposit, deposits: depositsWithUsers };
 };
 
-const updateDepositById = async (depositId, { amount, month, depositDate, notes }) => {
+const updateDepositById = async (depositId: string, { amount, month, depositDate, notes }: DepositPayload) => {
   if (!ObjectId.isValid(depositId)) {
     throw createHttpError(400, 'Invalid deposit ID');
   }
 
-  return withMongoTransaction(async (session) => {
+  return withMongoTransaction(async (session: ClientSession) => {
     const { deposits, memberBalances, monthlyFinalization } = await getCollections();
-    const existingDeposit = await deposits.findOne({ _id: new ObjectId(depositId) }, { session });
+    const existingDeposit = await deposits.findOne({ _id: new ObjectId(depositId) }, { session }) as DepositRecord | null;
     if (!existingDeposit) {
       throw createHttpError(404, 'Deposit not found');
     }
@@ -147,7 +191,7 @@ const updateDepositById = async (depositId, { amount, month, depositDate, notes 
     const amountDifference = newAmount - oldAmount;
     const now = new Date();
 
-    const updateData = { updatedAt: now, createdDate: existingDeposit.createdDate };
+    const updateData: Partial<DepositRecord> = { updatedAt: now, createdDate: existingDeposit.createdDate };
     if (amount !== undefined) updateData.amount = amount;
     if (month !== undefined) updateData.month = month;
     if (depositDate !== undefined) {
@@ -169,14 +213,14 @@ const updateDepositById = async (depositId, { amount, month, depositDate, notes 
   });
 };
 
-const deleteDepositById = async (depositId) => {
+const deleteDepositById = async (depositId: string) => {
   if (!ObjectId.isValid(depositId)) {
     throw createHttpError(400, 'Invalid deposit ID');
   }
 
-  return withMongoTransaction(async (session) => {
+  return withMongoTransaction(async (session: ClientSession) => {
     const { deposits, memberBalances, monthlyFinalization } = await getCollections();
-    const existingDeposit = await deposits.findOne({ _id: new ObjectId(depositId) }, { session });
+    const existingDeposit = await deposits.findOne({ _id: new ObjectId(depositId) }, { session }) as DepositRecord | null;
     if (!existingDeposit) {
       throw createHttpError(404, 'Deposit not found');
     }
@@ -193,7 +237,7 @@ const deleteDepositById = async (depositId) => {
   });
 };
 
-module.exports = {
+export = {
   addDepositForUser,
   getMonthlyDepositForCurrentUser,
   listDeposits,

@@ -1,9 +1,20 @@
-// @ts-nocheck
-const { ObjectId } = require('mongodb');
+import { ObjectId } from 'mongodb';
 const { getCollections } = require('../../config/connectMongodb');
 const { createHttpError } = require('./finance.utils');
 
-const normalizeUserId = (value) => {
+type BalanceRecord = {
+  userId: string;
+  balance: number;
+  lastUpdated: Date | null;
+};
+
+type UserRecord = {
+  _id: ObjectId;
+  name?: string;
+  email?: string;
+};
+
+const normalizeUserId = (value: unknown): string => {
   if (!value) {
     throw createHttpError(400, 'User ID is required');
   }
@@ -19,7 +30,7 @@ const normalizeUserId = (value) => {
   throw createHttpError(400, 'Invalid user ID');
 };
 
-const getUserProjectionById = async (users, userId) => {
+const getUserProjectionById = async (users: any, userId: string): Promise<UserRecord | null> => {
   if (!ObjectId.isValid(userId)) {
     throw createHttpError(400, 'Invalid user ID');
   }
@@ -29,14 +40,14 @@ const getUserProjectionById = async (users, userId) => {
 
 const listBalances = async () => {
   const { users, memberBalances } = await getCollections();
-  const allBalances = await memberBalances.find({}).toArray();
+  const allBalances = await memberBalances.find({}).toArray() as BalanceRecord[];
 
   const userIds = allBalances
     .filter(balance => ObjectId.isValid(balance.userId))
     .map(balance => new ObjectId(balance.userId));
 
-  const usersList = await users.find({ _id: { $in: userIds } }).toArray();
-  const usersMap = {};
+  const usersList = await users.find({ _id: { $in: userIds } }).toArray() as UserRecord[];
+  const usersMap: Record<string, UserRecord> = {};
   for (const user of usersList) {
     usersMap[user._id.toString()] = user;
   }
@@ -59,7 +70,7 @@ const listBalances = async () => {
 const getBalanceByUserId = async (userId) => {
   const normalizedUserId = normalizeUserId(userId);
   const { users, memberBalances } = await getCollections();
-  const balance = await memberBalances.findOne({ userId: normalizedUserId });
+  const balance = await memberBalances.findOne({ userId: normalizedUserId }) as BalanceRecord | null;
 
   if (!balance) {
     const user = await getUserProjectionById(users, normalizedUserId);
@@ -89,7 +100,7 @@ const getBalanceByUserId = async (userId) => {
 const getBalanceForCurrentUser = async (currentUserId) => {
   const userId = normalizeUserId(currentUserId);
   const { users, memberBalances } = await getCollections();
-  const balance = await memberBalances.findOne({ userId });
+  const balance = await memberBalances.findOne({ userId }) as BalanceRecord | null;
 
   if (!balance) {
     const user = await getUserProjectionById(users, userId);
@@ -115,7 +126,7 @@ const getBalanceForCurrentUser = async (currentUserId) => {
   };
 };
 
-module.exports = {
+export = {
   listBalances,
   getBalanceByUserId,
   getBalanceForCurrentUser

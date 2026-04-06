@@ -1,5 +1,4 @@
-// @ts-nocheck
-const { ObjectId } = require('mongodb');
+import { ObjectId } from 'mongodb';
 const { getCollections } = require('../../config/connectMongodb');
 const { createHttpError } = require('../finance/finance.utils');
 const {
@@ -8,18 +7,63 @@ const {
   serviceDateToLegacyDate
 } = require('../shared/date.utils');
 
-const buildCanonicalServiceDateRangeQuery = (startDate, endDate) => ({
+type MealOption = {
+  mealType: string;
+  isAvailable: boolean;
+  customDeadline: string | null;
+  weight: number;
+  menu: string;
+};
+
+type ScheduleRecord = {
+  _id?: ObjectId;
+  date: Date;
+  serviceDate: string;
+  isHoliday: boolean;
+  availableMeals: MealOption[];
+  createdBy?: unknown;
+  createdAt: Date;
+  updatedAt: Date;
+};
+
+type RegistrationRecord = {
+  _id?: ObjectId;
+  userId: ObjectId | string;
+  date: Date;
+  serviceDate: string;
+  mealType: string;
+  numberOfMeals: number;
+  registeredAt: Date;
+};
+
+type UserSummary = {
+  _id: ObjectId;
+  name?: string;
+  email?: string;
+};
+
+type RangePayload = {
+  startDate?: string;
+  endDate?: string;
+};
+
+type ScheduleUpdatePayload = {
+  isHoliday?: boolean;
+  availableMeals?: MealOption[];
+};
+
+const buildCanonicalServiceDateRangeQuery = (startDate: string, endDate: string) => ({
   serviceDate: { $gte: startDate, $lte: endDate }
 });
 
-const buildCanonicalServiceDateEqualityQuery = (serviceDate) => ({ serviceDate });
+const buildCanonicalServiceDateEqualityQuery = (serviceDate: string) => ({ serviceDate });
 
-const isWeekend = (date) => {
+const isWeekend = (date: Date) => {
   const day = date.getDay();
   return day === 5 || day === 6;
 };
 
-const getDefaultMeals = (date, isHoliday) => {
+const getDefaultMeals = (date: Date, isHoliday: boolean): MealOption[] => {
   if (isWeekend(date) || isHoliday) {
     return [
       { mealType: 'morning', isAvailable: true, customDeadline: null, weight: 0.5, menu: '' },
@@ -35,7 +79,7 @@ const getDefaultMeals = (date, isHoliday) => {
   ];
 };
 
-const generateSchedulesForRange = async ({ startDate, endDate }, managerId) => {
+const generateSchedulesForRange = async ({ startDate, endDate }: RangePayload, managerId: unknown) => {
   if (!managerId) {
     throw createHttpError(401, 'Unauthorized');
   }
@@ -62,12 +106,12 @@ const generateSchedulesForRange = async ({ startDate, endDate }, managerId) => {
 
   const { mealSchedules, mealRegistrations, users } = await getCollections();
   const [existingSchedules, defaultUsers] = await Promise.all([
-    mealSchedules.find(buildCanonicalServiceDateRangeQuery(startDate, endDate), { projection: { serviceDate: 1 } }).toArray(),
-    users.find({ mealDefault: true }, { projection: { _id: 1 } }).toArray()
+    mealSchedules.find(buildCanonicalServiceDateRangeQuery(startDate, endDate), { projection: { serviceDate: 1 } }).toArray() as Promise<Array<Pick<ScheduleRecord, 'serviceDate'>>>,
+    users.find({ mealDefault: true }, { projection: { _id: 1 } }).toArray() as Promise<Array<Pick<UserSummary, '_id'>>>
   ]);
 
   const existingDates = new Set(existingSchedules.map(schedule => schedule.serviceDate));
-  const schedulesToCreate = [];
+  const schedulesToCreate: ScheduleRecord[] = [];
   const currentDate = new Date(start);
 
   while (currentDate <= end) {
@@ -98,7 +142,7 @@ const generateSchedulesForRange = async ({ startDate, endDate }, managerId) => {
   const result = await mealSchedules.insertMany(schedulesToCreate);
 
   if (defaultUsers.length > 0) {
-    const registrations = [];
+    const registrations: RegistrationRecord[] = [];
 
     for (const schedule of schedulesToCreate) {
       const availableMealTypes = schedule.availableMeals
@@ -132,7 +176,7 @@ const generateSchedulesForRange = async ({ startDate, endDate }, managerId) => {
   };
 };
 
-const listSchedules = async ({ startDate, endDate }) => {
+const listSchedules = async ({ startDate, endDate }: RangePayload) => {
   if (!startDate || !endDate) {
     throw createHttpError(400, 'startDate and endDate are required');
   }
@@ -145,11 +189,11 @@ const listSchedules = async ({ startDate, endDate }) => {
   }
 
   const { mealSchedules } = await getCollections();
-  const schedules = await mealSchedules.find(buildCanonicalServiceDateRangeQuery(startDate, endDate)).sort({ serviceDate: 1 }).toArray();
+  const schedules = await mealSchedules.find(buildCanonicalServiceDateRangeQuery(startDate, endDate)).sort({ serviceDate: 1 }).toArray() as ScheduleRecord[];
   return { count: schedules.length, schedules: schedules.map((schedule) => normalizeBusinessDateFields(schedule)) };
 };
 
-const updateScheduleById = async (scheduleId, { isHoliday, availableMeals }) => {
+const updateScheduleById = async (scheduleId: string, { isHoliday, availableMeals }: ScheduleUpdatePayload) => {
   if (!ObjectId.isValid(scheduleId)) {
     throw createHttpError(400, 'Invalid schedule ID');
   }
@@ -158,7 +202,7 @@ const updateScheduleById = async (scheduleId, { isHoliday, availableMeals }) => 
     throw createHttpError(400, 'availableMeals must be an array');
   }
 
-  const updateData = { updatedAt: new Date() };
+  const updateData: Partial<ScheduleRecord> = { updatedAt: new Date() };
   if (isHoliday !== undefined) {
     updateData.isHoliday = isHoliday;
   }
@@ -178,7 +222,7 @@ const updateScheduleById = async (scheduleId, { isHoliday, availableMeals }) => 
     { _id: new ObjectId(scheduleId) },
     { $set: updateData },
     { returnDocument: 'after' }
-  );
+  ) as ScheduleRecord | null;
 
   if (!schedule) {
     throw createHttpError(404, 'Schedule not found');
@@ -198,13 +242,13 @@ const updateScheduleById = async (scheduleId, { isHoliday, availableMeals }) => 
   return normalizeBusinessDateFields(schedule);
 };
 
-const deleteScheduleById = async (scheduleId) => {
+const deleteScheduleById = async (scheduleId: string) => {
   if (!ObjectId.isValid(scheduleId)) {
     throw createHttpError(400, 'Invalid schedule ID');
   }
 
   const { mealSchedules, mealRegistrations } = await getCollections();
-  const schedule = await mealSchedules.findOneAndDelete({ _id: new ObjectId(scheduleId) });
+  const schedule = await mealSchedules.findOneAndDelete({ _id: new ObjectId(scheduleId) }) as ScheduleRecord | null;
 
   if (!schedule) {
     throw createHttpError(404, 'Schedule not found');
@@ -216,7 +260,7 @@ const deleteScheduleById = async (scheduleId) => {
   return { registrationsCleared: deletedCount };
 };
 
-const listRegistrationsForRange = async ({ startDate, endDate }) => {
+const listRegistrationsForRange = async ({ startDate, endDate }: RangePayload) => {
   if (!startDate || !endDate) {
     throw createHttpError(400, 'startDate and endDate query parameters are required');
   }
@@ -231,15 +275,15 @@ const listRegistrationsForRange = async ({ startDate, endDate }) => {
   const { mealRegistrations, users } = await getCollections();
   const registrations = await mealRegistrations.find(
     buildCanonicalServiceDateRangeQuery(startDate, endDate)
-  ).sort({ serviceDate: 1, userId: 1, mealType: 1 }).toArray();
+  ).sort({ serviceDate: 1, userId: 1, mealType: 1 }).toArray() as RegistrationRecord[];
 
   const userIds = [...new Set(registrations.map(registration => registration.userId))];
-  const usersMap = {};
+  const usersMap: Record<string, { name?: string; email?: string }> = {};
 
   if (userIds.length > 0) {
     const usersList = await users.find({
       _id: { $in: userIds.map(id => new ObjectId(id)) }
-    }).toArray();
+    }).toArray() as UserSummary[];
 
     usersList.forEach(user => {
       usersMap[user._id.toString()] = { name: user.name, email: user.email };
@@ -248,7 +292,7 @@ const listRegistrationsForRange = async ({ startDate, endDate }) => {
 
   const enrichedRegistrations = registrations.map(registration => ({
     ...normalizeBusinessDateFields(registration),
-    user: usersMap[registration.userId] || null
+    user: usersMap[registration.userId.toString()] || null
   }));
 
   return {
@@ -259,7 +303,7 @@ const listRegistrationsForRange = async ({ startDate, endDate }) => {
   };
 };
 
-module.exports = {
+export = {
   generateSchedulesForRange,
   listSchedules,
   updateScheduleById,

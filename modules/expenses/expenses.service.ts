@@ -1,5 +1,4 @@
-// @ts-nocheck
-const { ObjectId } = require('mongodb');
+import { ObjectId } from 'mongodb';
 const { getCollections } = require('../../config/connectMongodb');
 const { createHttpError } = require('../finance/finance.utils');
 const {
@@ -11,11 +10,47 @@ const {
 } = require('../shared/date.utils');
 const { assertMonthIsNotFinalized } = require('../shared/service-rules');
 
-const buildCanonicalServiceDateRangeQuery = (startDate, endDate) => ({
+type ExpenseRecord = {
+  _id?: ObjectId;
+  date: Date;
+  serviceDate: string;
+  category: string;
+  amount: number;
+  description: string;
+  person: string;
+  addedBy?: ObjectId | string;
+  createdAt: Date;
+  createdDate: string;
+  updatedAt: Date;
+  updatedDate: string;
+};
+
+type UserSummary = {
+  _id: ObjectId;
+  name?: string;
+};
+
+type ExpensePayload = {
+  date?: string;
+  category?: string;
+  amount?: number;
+  description?: string;
+  person?: string;
+};
+
+type ExpenseListQuery = {
+  serviceDate?: {
+    $gte: string;
+    $lte: string;
+  };
+  category?: string;
+};
+
+const buildCanonicalServiceDateRangeQuery = (startDate: string, endDate: string) => ({
   serviceDate: { $gte: startDate, $lte: endDate }
 });
 
-const addExpenseEntry = async ({ date, category, amount, description, person }, managerId) => {
+const addExpenseEntry = async ({ date, category, amount, description, person }: ExpensePayload, managerId: ObjectId | string | undefined) => {
   if (!date || !category || !amount) {
     throw createHttpError(400, 'date, category, and amount are required');
   }
@@ -27,7 +62,7 @@ const addExpenseEntry = async ({ date, category, amount, description, person }, 
   const { expenses } = await getCollections();
   const serviceDate = formatServiceDate(date);
   const todayServiceDate = getCurrentServiceDate();
-  const expense = {
+  const expense: ExpenseRecord = {
     date: serviceDateToLegacyDate(serviceDate),
     serviceDate,
     category,
@@ -45,21 +80,21 @@ const addExpenseEntry = async ({ date, category, amount, description, person }, 
   return { expenseId: result.insertedId, expense: { ...expense, _id: result.insertedId } };
 };
 
-const listExpenses = async ({ startDate, endDate, category }) => {
-  const query = {};
+const listExpenses = async ({ startDate, endDate, category }: { startDate?: string; endDate?: string; category?: string }) => {
+  const query: ExpenseListQuery = {};
   if (startDate && endDate) {
     Object.assign(query, buildCanonicalServiceDateRangeQuery(startDate, endDate));
   }
   if (category) query.category = category;
 
   const { users, expenses } = await getCollections();
-  const allExpenses = await expenses.find(query).sort({ serviceDate: -1, createdAt: -1 }).toArray();
+  const allExpenses = await expenses.find(query).sort({ serviceDate: -1, createdAt: -1 }).toArray() as ExpenseRecord[];
 
   const managerIds = [...new Set(allExpenses.map(expense => expense.addedBy?.toString()).filter(id => id && ObjectId.isValid(id)))]
     .map(id => new ObjectId(id));
 
-  const managersList = await users.find({ _id: { $in: managerIds } }).toArray();
-  const managersMap = {};
+  const managersList = await users.find({ _id: { $in: managerIds } }).toArray() as UserSummary[];
+  const managersMap: Record<string, UserSummary> = {};
   for (const manager of managersList) {
     managersMap[manager._id.toString()] = manager;
   }
@@ -74,13 +109,13 @@ const listExpenses = async ({ startDate, endDate, category }) => {
   return { count: expensesWithManagers.length, expenses: expensesWithManagers };
 };
 
-const updateExpenseById = async (expenseId, { date, category, amount, description, person }) => {
+const updateExpenseById = async (expenseId: string, { date, category, amount, description, person }: ExpensePayload) => {
   if (!ObjectId.isValid(expenseId)) {
     throw createHttpError(400, 'Invalid expense ID');
   }
 
   const { expenses, monthlyFinalization } = await getCollections();
-  const existingExpense = await expenses.findOne({ _id: new ObjectId(expenseId) });
+  const existingExpense = await expenses.findOne({ _id: new ObjectId(expenseId) }) as ExpenseRecord | null;
   if (!existingExpense) {
     throw createHttpError(404, 'Expense not found');
   }
@@ -88,7 +123,7 @@ const updateExpenseById = async (expenseId, { date, category, amount, descriptio
   const expenseMonth = getServiceMonth(existingExpense.serviceDate);
   await assertMonthIsNotFinalized(monthlyFinalization, expenseMonth);
 
-  const updateData = { updatedAt: new Date(), updatedDate: getCurrentServiceDate() };
+  const updateData: Partial<ExpenseRecord> = { updatedAt: new Date(), updatedDate: getCurrentServiceDate() };
   if (date !== undefined) {
     const serviceDate = formatServiceDate(date);
     updateData.date = serviceDateToLegacyDate(serviceDate);
@@ -102,13 +137,13 @@ const updateExpenseById = async (expenseId, { date, category, amount, descriptio
   await expenses.updateOne({ _id: new ObjectId(expenseId) }, { $set: updateData });
 };
 
-const deleteExpenseById = async (expenseId) => {
+const deleteExpenseById = async (expenseId: string) => {
   if (!ObjectId.isValid(expenseId)) {
     throw createHttpError(400, 'Invalid expense ID');
   }
 
   const { expenses, monthlyFinalization } = await getCollections();
-  const existingExpense = await expenses.findOne({ _id: new ObjectId(expenseId) });
+  const existingExpense = await expenses.findOne({ _id: new ObjectId(expenseId) }) as ExpenseRecord | null;
   if (!existingExpense) {
     throw createHttpError(404, 'Expense not found');
   }
@@ -119,7 +154,7 @@ const deleteExpenseById = async (expenseId) => {
   await expenses.deleteOne({ _id: new ObjectId(expenseId) });
 };
 
-module.exports = {
+export = {
   addExpenseEntry,
   listExpenses,
   updateExpenseById,
