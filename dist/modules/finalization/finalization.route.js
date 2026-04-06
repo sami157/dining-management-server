@@ -1,13 +1,16 @@
 "use strict";
-Object.defineProperty(exports, "__esModule", { value: true });
-// @ts-nocheck
-const express = require('express');
-const verifyFirebaseToken = require('../../middleware/verifyFirebaseToken');
-const { finalizeMonth, getMonthFinalization, getMyFinalizationData, getAllFinalizations, undoMonthFinalization } = require('./finalization.controller');
-const router = express.Router();
-router.post('/finalize', verifyFirebaseToken(['admin', 'super_admin']), finalizeMonth);
-router.get('/finalization/:month', verifyFirebaseToken(), getMonthFinalization);
-router.get('/user-finalization', verifyFirebaseToken(), getMyFinalizationData);
-router.get('/finalizations', verifyFirebaseToken(), getAllFinalizations);
-router.delete('/finalization/:month', verifyFirebaseToken(['admin', 'super_admin']), undoMonthFinalization);
+var __importDefault = (this && this.__importDefault) || function (mod) {
+    return (mod && mod.__esModule) ? mod : { "default": mod };
+};
+const express_1 = __importDefault(require("express"));
+const verifyFirebaseToken = require("../../middleware/verifyFirebaseToken");
+const validateRequest = require("../../middleware/validateRequest");
+const finalization_controller_1 = require("./finalization.controller");
+const finalization_validation_1 = require("./finalization.validation");
+const router = express_1.default.Router();
+router.post('/finalize', verifyFirebaseToken(['admin', 'super_admin']), validateRequest({ body: finalization_validation_1.finalizeMonthBodySchema }), finalization_controller_1.finalizeMonth);
+router.get('/finalization/:month', verifyFirebaseToken(), validateRequest({ params: finalization_validation_1.monthParamsSchema }), finalization_controller_1.getMonthFinalization);
+router.get('/user-finalization', verifyFirebaseToken(), validateRequest({ query: finalization_validation_1.currentUserFinalizationQuerySchema }), finalization_controller_1.getMyFinalizationData);
+router.get('/finalizations', verifyFirebaseToken(), finalization_controller_1.getAllFinalizations);
+router.delete('/finalization/:month', verifyFirebaseToken(['admin', 'super_admin']), validateRequest({ params: finalization_validation_1.monthParamsSchema }), finalization_controller_1.undoMonthFinalization);
 module.exports = router;

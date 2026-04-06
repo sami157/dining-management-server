@@ -1,18 +1,20 @@
 "use strict";
-Object.defineProperty(exports, "__esModule", { value: true });
-// @ts-nocheck
-const express = require('express');
-const verifyFirebaseToken = require('../../middleware/verifyFirebaseToken');
-const { createUser, getUserProfile, updateUserProfile, updateUserRole, getAllUsers, getUserRole, updateFixedDeposit, updateMosqueFee, checkUserWithEmail } = require('./users.controller');
-const router = express.Router();
-// User management
-router.post('/create', verifyFirebaseToken(), createUser);
-router.get('/profile', verifyFirebaseToken(), getUserProfile);
-router.put('/profile', verifyFirebaseToken(), updateUserProfile);
-router.put('/role/:userId', verifyFirebaseToken(['admin', 'manager', 'super_admin']), updateUserRole);
-router.put('/fixedDeposit/:userId', verifyFirebaseToken(['admin', 'super_admin']), updateFixedDeposit);
-router.put('/mosqueFee/:userId', verifyFirebaseToken(['admin', 'super_admin']), updateMosqueFee);
-router.get('/', getAllUsers);
-router.get('/get-role/:email', getUserRole);
-router.get('/check-user/:email', checkUserWithEmail);
+var __importDefault = (this && this.__importDefault) || function (mod) {
+    return (mod && mod.__esModule) ? mod : { "default": mod };
+};
+const express_1 = __importDefault(require("express"));
+const verifyFirebaseToken = require("../../middleware/verifyFirebaseToken");
+const validateRequest = require("../../middleware/validateRequest");
+const users_controller_1 = require("./users.controller");
+const users_validation_1 = require("./users.validation");
+const router = express_1.default.Router();
+router.post('/create', verifyFirebaseToken(), validateRequest({ body: users_validation_1.createUserBodySchema }), users_controller_1.createUser);
+router.get('/profile', verifyFirebaseToken(), users_controller_1.getUserProfile);
+router.put('/profile', verifyFirebaseToken(), validateRequest({ body: users_validation_1.updateUserProfileBodySchema }), users_controller_1.updateUserProfile);
+router.put('/role/:userId', verifyFirebaseToken(['admin', 'manager', 'super_admin']), validateRequest({ params: users_validation_1.userIdParamsSchema, body: users_validation_1.updateUserRoleBodySchema }), users_controller_1.updateUserRole);
+router.put('/fixedDeposit/:userId', verifyFirebaseToken(['admin', 'super_admin']), validateRequest({ params: users_validation_1.userIdParamsSchema, body: users_validation_1.updateFixedDepositBodySchema }), users_controller_1.updateFixedDeposit);
+router.put('/mosqueFee/:userId', verifyFirebaseToken(['admin', 'super_admin']), validateRequest({ params: users_validation_1.userIdParamsSchema, body: users_validation_1.updateMosqueFeeBodySchema }), users_controller_1.updateMosqueFee);
+router.get('/', validateRequest({ query: users_validation_1.listUsersQuerySchema }), users_controller_1.getAllUsers);
+router.get('/get-role/:email', validateRequest({ params: users_validation_1.emailParamsSchema }), users_controller_1.getUserRole);
+router.get('/check-user/:email', validateRequest({ params: users_validation_1.emailParamsSchema }), users_controller_1.checkUserWithEmail);
 module.exports = router;

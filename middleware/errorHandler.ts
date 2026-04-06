@@ -1,8 +1,19 @@
-// @ts-nocheck
-const { ZodError } = require('zod');
+import type { NextFunction, Request, RequestHandler, Response } from 'express';
+import { ZodError } from 'zod';
 
-const createHttpError = (status, message, options = {}) => {
-  const error = new Error(message);
+type HttpErrorOptions = {
+  code?: string;
+  details?: unknown;
+};
+
+type HttpError = Error & {
+  status?: number;
+  code?: string;
+  details?: unknown;
+};
+
+const createHttpError = (status: number, message: string, options: HttpErrorOptions = {}): HttpError => {
+  const error = new Error(message) as HttpError;
   error.status = status;
 
   if (options.code) {
@@ -16,17 +27,17 @@ const createHttpError = (status, message, options = {}) => {
   return error;
 };
 
-const asyncHandler = (handler) => {
+const asyncHandler = <T extends RequestHandler>(handler: T): RequestHandler => {
   return (req, res, next) => {
     Promise.resolve(handler(req, res, next)).catch(next);
   };
 };
 
-const notFoundHandler = (req, res, next) => {
+const notFoundHandler = (req: Request, res: Response, next: NextFunction) => {
   next(createHttpError(404, `Route not found: ${req.method} ${req.originalUrl}`));
 };
 
-const globalErrorHandler = (error, req, res, next) => {
+const globalErrorHandler = (error: HttpError, req: Request, res: Response, next: NextFunction) => {
   if (res.headersSent) {
     return next(error);
   }
@@ -37,7 +48,11 @@ const globalErrorHandler = (error, req, res, next) => {
 
   console.error(`[${req.method} ${req.originalUrl}]`, error);
 
-  const payload = { error: message };
+  const payload: {
+    error: string;
+    code?: string;
+    details?: unknown;
+  } = { error: message };
 
   if (error.code) {
     payload.code = error.code;
@@ -55,10 +70,9 @@ const globalErrorHandler = (error, req, res, next) => {
   return res.status(status).json(payload);
 };
 
-module.exports = {
+export = {
   createHttpError,
   asyncHandler,
   notFoundHandler,
   globalErrorHandler
 };
-

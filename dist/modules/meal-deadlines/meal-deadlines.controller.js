@@ -1,25 +1,18 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-// @ts-nocheck
-const { getMealDeadlineConfig, updateMealDeadlineConfig, validateMealDeadlineConfig } = require('./meal-deadlines.service');
-const { createHttpError } = require('../../middleware/errorHandler');
+exports.updateGlobalMealDeadlines = exports.getGlobalMealDeadlines = void 0;
+const { getMealDeadlineConfig, updateMealDeadlineConfig } = require('./meal-deadlines.service');
 const { asyncHandler } = require('../shared/controller.utils');
 const getGlobalMealDeadlines = asyncHandler(async (req, res) => {
     const mealDeadlines = await getMealDeadlineConfig();
     return res.status(200).json({ mealDeadlines });
 });
+exports.getGlobalMealDeadlines = getGlobalMealDeadlines;
 const updateGlobalMealDeadlines = asyncHandler(async (req, res) => {
-    const validationError = validateMealDeadlineConfig(req.body);
-    if (validationError) {
-        throw createHttpError(400, validationError);
-    }
     const mealDeadlines = await updateMealDeadlineConfig(req.body, req.user?._id || null);
     return res.status(200).json({
         message: 'Meal deadlines updated successfully',
         mealDeadlines
     });
 });
-module.exports = {
-    getGlobalMealDeadlines,
-    updateGlobalMealDeadlines
-};
+exports.updateGlobalMealDeadlines = updateGlobalMealDeadlines;

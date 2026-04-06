@@ -1,17 +1,17 @@
-// @ts-nocheck
-const express = require('express');
-const verifyFirebaseToken = require('../../middleware/verifyFirebaseToken');
-const {
+import express from 'express';
+import verifyFirebaseToken = require('../../middleware/verifyFirebaseToken');
+import validateRequest = require('../../middleware/validateRequest');
+import {
   getAllBalances,
-  getUserBalance,
-  getMyBalance
-} = require('./balances.controller');
+  getMyBalance,
+  getUserBalance
+} from './balances.controller';
+import { userIdParamsSchema } from './balances.validation';
 
 const router = express.Router();
 
 router.get('/balances', getAllBalances);
-router.get('/balances/:userId', getUserBalance);
+router.get('/balances/:userId', validateRequest({ params: userIdParamsSchema }), getUserBalance);
 router.get('/my-balance', verifyFirebaseToken(), getMyBalance);
 
-module.exports = router;
-
+export = router;

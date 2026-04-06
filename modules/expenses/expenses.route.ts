@@ -1,19 +1,34 @@
-// @ts-nocheck
-const express = require('express');
-const verifyFirebaseToken = require('../../middleware/verifyFirebaseToken');
-const {
+import express from 'express';
+import verifyFirebaseToken = require('../../middleware/verifyFirebaseToken');
+import validateRequest = require('../../middleware/validateRequest');
+import {
   addExpense,
+  deleteExpense,
   getAllExpenses,
-  updateExpense,
-  deleteExpense
-} = require('./expenses.controller');
+  updateExpense
+} from './expenses.controller';
+import {
+  expenseBodyBaseSchema,
+  expenseIdParamsSchema,
+  expensesQuerySchema,
+  updateExpenseBodySchema
+} from './expenses.validation';
 
 const router = express.Router();
 
-router.post('/expenses/add', verifyFirebaseToken(['admin', 'super_admin']), addExpense);
-router.get('/expenses', verifyFirebaseToken(), getAllExpenses);
-router.put('/expenses/:expenseId', verifyFirebaseToken(['admin', 'super_admin']), updateExpense);
-router.delete('/expenses/:expenseId', verifyFirebaseToken(['admin', 'super_admin']), deleteExpense);
+router.post('/expenses/add', verifyFirebaseToken(['admin', 'super_admin']), validateRequest({ body: expenseBodyBaseSchema }), addExpense);
+router.get('/expenses', verifyFirebaseToken(), validateRequest({ query: expensesQuerySchema }), getAllExpenses);
+router.put(
+  '/expenses/:expenseId',
+  verifyFirebaseToken(['admin', 'super_admin']),
+  validateRequest({ params: expenseIdParamsSchema, body: updateExpenseBodySchema }),
+  updateExpense
+);
+router.delete(
+  '/expenses/:expenseId',
+  verifyFirebaseToken(['admin', 'super_admin']),
+  validateRequest({ params: expenseIdParamsSchema }),
+  deleteExpense
+);
 
-module.exports = router;
-
+export = router;

@@ -1,10 +1,13 @@
 "use strict";
-Object.defineProperty(exports, "__esModule", { value: true });
-// @ts-nocheck
-const express = require('express');
-const verifyFirebaseToken = require('../../middleware/verifyFirebaseToken');
-const { getGlobalMealDeadlines, updateGlobalMealDeadlines } = require('./meal-deadlines.controller');
-const router = express.Router();
-router.get('/', verifyFirebaseToken(), getGlobalMealDeadlines);
-router.put('/', verifyFirebaseToken(['admin', 'super_admin']), updateGlobalMealDeadlines);
+var __importDefault = (this && this.__importDefault) || function (mod) {
+    return (mod && mod.__esModule) ? mod : { "default": mod };
+};
+const express_1 = __importDefault(require("express"));
+const verifyFirebaseToken = require("../../middleware/verifyFirebaseToken");
+const validateRequest = require("../../middleware/validateRequest");
+const meal_deadlines_controller_1 = require("./meal-deadlines.controller");
+const meal_deadlines_validation_1 = require("./meal-deadlines.validation");
+const router = express_1.default.Router();
+router.get('/', verifyFirebaseToken(), meal_deadlines_controller_1.getGlobalMealDeadlines);
+router.put('/', verifyFirebaseToken(['admin', 'super_admin']), validateRequest({ body: meal_deadlines_validation_1.mealDeadlinesBodySchema }), meal_deadlines_controller_1.updateGlobalMealDeadlines);
 module.exports = router;

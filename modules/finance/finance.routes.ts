@@ -1,11 +1,11 @@
-// @ts-nocheck
-const express = require('express');
+import express from 'express';
+import balancesRouter = require('./balances.route');
+import depositsRouter = require('../deposits/deposits.route');
+import expensesRouter = require('../expenses/expenses.route');
+import finalizationRouter = require('../finalization/finalization.route');
+import statsRouter = require('../stats/stats.route');
+
 const router = express.Router();
-const depositsRouter = require('../deposits/deposits.route');
-const expensesRouter = require('../expenses/expenses.route');
-const balancesRouter = require('./balances.route');
-const finalizationRouter = require('../finalization/finalization.route');
-const statsRouter = require('../stats/stats.route');
 
 router.use(depositsRouter);
 router.use(expensesRouter);
@@ -13,5 +13,4 @@ router.use(balancesRouter);
 router.use(finalizationRouter);
 router.use(statsRouter);
 
-module.exports = router;
-
+export = router;

@@ -1,21 +1,41 @@
-// @ts-nocheck
-const express = require('express');
-const verifyFirebaseToken = require('../../middleware/verifyFirebaseToken');
-const {
-  generateSchedules,
-  getSchedules,
-  updateSchedule,
+import express from 'express';
+import verifyFirebaseToken = require('../../middleware/verifyFirebaseToken');
+import validateRequest = require('../../middleware/validateRequest');
+import {
   deleteSchedule,
-  getAllRegistrations
-} = require('./meal-schedules.controller');
+  generateSchedules,
+  getAllRegistrations,
+  getSchedules,
+  updateSchedule
+} from './meal-schedules.controller';
+import {
+  generateSchedulesBodySchema,
+  scheduleIdParamsSchema,
+  schedulesRangeQuerySchema,
+  updateScheduleBodySchema
+} from './meal-schedules.validation';
 
 const router = express.Router();
 
-router.post('/schedules/generate', verifyFirebaseToken(['admin', 'super_admin']), generateSchedules);
-router.get('/schedules', verifyFirebaseToken(), getSchedules);
-router.put('/schedules/:scheduleId', verifyFirebaseToken(['admin', 'super_admin']), updateSchedule);
-router.delete('/schedules/:scheduleId', verifyFirebaseToken(['admin', 'super_admin']), deleteSchedule);
-router.get('/registrations', getAllRegistrations);
+router.post(
+  '/schedules/generate',
+  verifyFirebaseToken(['admin', 'super_admin']),
+  validateRequest({ body: generateSchedulesBodySchema }),
+  generateSchedules
+);
+router.get('/schedules', verifyFirebaseToken(), validateRequest({ query: schedulesRangeQuerySchema }), getSchedules);
+router.put(
+  '/schedules/:scheduleId',
+  verifyFirebaseToken(['admin', 'super_admin']),
+  validateRequest({ params: scheduleIdParamsSchema, body: updateScheduleBodySchema }),
+  updateSchedule
+);
+router.delete(
+  '/schedules/:scheduleId',
+  verifyFirebaseToken(['admin', 'super_admin']),
+  validateRequest({ params: scheduleIdParamsSchema }),
+  deleteSchedule
+);
+router.get('/registrations', validateRequest({ query: schedulesRangeQuerySchema }), getAllRegistrations);
 
-module.exports = router;
-
+export = router;

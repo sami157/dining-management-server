@@ -1,7 +1,5 @@
 "use strict";
-Object.defineProperty(exports, "__esModule", { value: true });
-// @ts-nocheck
-const { ZodError } = require('zod');
+const zod_1 = require("zod");
 const createHttpError = (status, message, options = {}) => {
     const error = new Error(message);
     error.status = status;
@@ -25,7 +23,7 @@ const globalErrorHandler = (error, req, res, next) => {
     if (res.headersSent) {
         return next(error);
     }
-    const isValidationError = error instanceof ZodError;
+    const isValidationError = error instanceof zod_1.ZodError;
     const status = isValidationError ? 400 : (error.status || 500);
     const message = isValidationError ? 'Validation failed' : (error.message || 'Internal Server Error');
     console.error(`[${req.method} ${req.originalUrl}]`, error);

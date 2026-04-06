@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-// @ts-nocheck
+exports.undoMonthFinalization = exports.getAllFinalizations = exports.getMyFinalizationData = exports.getMonthFinalization = exports.finalizeMonth = void 0;
 const { finalizeMonthSummary, getFinalizationByMonth, getCurrentUserFinalization, listFinalizations, undoFinalizationByMonth } = require('./finalization.service');
 const { asyncHandler } = require('../shared/controller.utils');
 const finalizeMonth = asyncHandler(async (req, res) => {
@@ -11,18 +11,22 @@ const finalizeMonth = asyncHandler(async (req, res) => {
         summary: result.summary
     });
 });
+exports.finalizeMonth = finalizeMonth;
 const getMonthFinalization = asyncHandler(async (req, res) => {
     const result = await getFinalizationByMonth(req.params.month);
     return res.status(200).json(result);
 });
+exports.getMonthFinalization = getMonthFinalization;
 const getMyFinalizationData = asyncHandler(async (req, res) => {
-    const result = await getCurrentUserFinalization(req.user?._id.toString(), req.query.month);
+    const result = await getCurrentUserFinalization(req.user?._id?.toString(), req.query.month);
     return res.status(200).json(result);
 });
+exports.getMyFinalizationData = getMyFinalizationData;
 const getAllFinalizations = asyncHandler(async (req, res) => {
     const result = await listFinalizations();
     return res.status(200).json(result);
 });
+exports.getAllFinalizations = getAllFinalizations;
 const undoMonthFinalization = asyncHandler(async (req, res) => {
     const result = await undoFinalizationByMonth(req.params.month);
     return res.status(200).json({
@@ -30,10 +34,4 @@ const undoMonthFinalization = asyncHandler(async (req, res) => {
         restoredMembers: result.restoredMembers
     });
 });
-module.exports = {
-    finalizeMonth,
-    getMonthFinalization,
-    getMyFinalizationData,
-    getAllFinalizations,
-    undoMonthFinalization
-};
+exports.undoMonthFinalization = undoMonthFinalization;

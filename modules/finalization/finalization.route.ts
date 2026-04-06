@@ -1,21 +1,30 @@
-// @ts-nocheck
-const express = require('express');
-const verifyFirebaseToken = require('../../middleware/verifyFirebaseToken');
-const {
+import express from 'express';
+import verifyFirebaseToken = require('../../middleware/verifyFirebaseToken');
+import validateRequest = require('../../middleware/validateRequest');
+import {
   finalizeMonth,
+  getAllFinalizations,
   getMonthFinalization,
   getMyFinalizationData,
-  getAllFinalizations,
   undoMonthFinalization
-} = require('./finalization.controller');
+} from './finalization.controller';
+import {
+  currentUserFinalizationQuerySchema,
+  finalizeMonthBodySchema,
+  monthParamsSchema
+} from './finalization.validation';
 
 const router = express.Router();
 
-router.post('/finalize', verifyFirebaseToken(['admin', 'super_admin']), finalizeMonth);
-router.get('/finalization/:month', verifyFirebaseToken(), getMonthFinalization);
-router.get('/user-finalization', verifyFirebaseToken(), getMyFinalizationData);
+router.post('/finalize', verifyFirebaseToken(['admin', 'super_admin']), validateRequest({ body: finalizeMonthBodySchema }), finalizeMonth);
+router.get('/finalization/:month', verifyFirebaseToken(), validateRequest({ params: monthParamsSchema }), getMonthFinalization);
+router.get('/user-finalization', verifyFirebaseToken(), validateRequest({ query: currentUserFinalizationQuerySchema }), getMyFinalizationData);
 router.get('/finalizations', verifyFirebaseToken(), getAllFinalizations);
-router.delete('/finalization/:month', verifyFirebaseToken(['admin', 'super_admin']), undoMonthFinalization);
+router.delete(
+  '/finalization/:month',
+  verifyFirebaseToken(['admin', 'super_admin']),
+  validateRequest({ params: monthParamsSchema }),
+  undoMonthFinalization
+);
 
-module.exports = router;
-
+export = router;

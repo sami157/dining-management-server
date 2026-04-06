@@ -1,6 +1,4 @@
 "use strict";
-Object.defineProperty(exports, "__esModule", { value: true });
-// @ts-nocheck
 const validateRequest = (schemas = {}) => {
     return (req, res, next) => {
         try {

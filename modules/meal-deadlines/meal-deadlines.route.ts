@@ -1,15 +1,15 @@
-// @ts-nocheck
-const express = require('express');
-const verifyFirebaseToken = require('../../middleware/verifyFirebaseToken');
-const {
+import express from 'express';
+import verifyFirebaseToken = require('../../middleware/verifyFirebaseToken');
+import validateRequest = require('../../middleware/validateRequest');
+import {
   getGlobalMealDeadlines,
   updateGlobalMealDeadlines
-} = require('./meal-deadlines.controller');
+} from './meal-deadlines.controller';
+import { mealDeadlinesBodySchema } from './meal-deadlines.validation';
 
 const router = express.Router();
 
 router.get('/', verifyFirebaseToken(), getGlobalMealDeadlines);
-router.put('/', verifyFirebaseToken(['admin', 'super_admin']), updateGlobalMealDeadlines);
+router.put('/', verifyFirebaseToken(['admin', 'super_admin']), validateRequest({ body: mealDeadlinesBodySchema }), updateGlobalMealDeadlines);
 
-module.exports = router;
-
+export = router;

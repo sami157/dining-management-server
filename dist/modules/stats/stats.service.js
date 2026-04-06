@@ -27,7 +27,7 @@ const getRunningMealRateSummary = async ({ month, date }) => {
             mealRate: Number((finalization.mealRate || 0).toFixed(2))
         };
     }
-    const [, allRegistrations, allSchedules, monthExpenses] = await Promise.all([
+    const [allRegistrations, allSchedules, monthExpenses] = await Promise.all([
         users.find({ isActive: { $ne: false } }).toArray(),
         mealRegistrations.find({ date: { $gte: startDate, $lte: endDate } }).toArray(),
         mealSchedules.find({ date: { $gte: startDate, $lte: endDate } }).toArray(),

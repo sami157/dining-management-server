@@ -1,23 +1,46 @@
-// @ts-nocheck
-const express = require('express');
-const verifyFirebaseToken = require('../../middleware/verifyFirebaseToken');
-const {
+import express from 'express';
+import verifyFirebaseToken = require('../../middleware/verifyFirebaseToken');
+import validateRequest = require('../../middleware/validateRequest');
+import {
+  bulkToggleMealsForUser,
+  cancelMealRegistration,
   getAvailableMeals,
   getTotalMealsForUser,
-  cancelMealRegistration,
   registerMeal,
-  updateMealRegistration,
-  bulkToggleMealsForUser
-} = require('./meals.controller');
+  updateMealRegistration
+} from './meals.controller';
+import {
+  availableMealsQuerySchema,
+  bulkRegisterMealsQuerySchema,
+  registerMealBodySchema,
+  registrationIdParamsSchema,
+  totalMealsParamsSchema,
+  totalMealsQuerySchema,
+  updateMealRegistrationBodySchema
+} from './meals.validation';
 
 const router = express.Router();
 
-router.get('/available', verifyFirebaseToken(), getAvailableMeals);
-router.post('/register', verifyFirebaseToken(), registerMeal);
-router.post('/bulk-register', verifyFirebaseToken(), bulkToggleMealsForUser);
-router.patch('/register/:registrationId', verifyFirebaseToken(), updateMealRegistration);
-router.delete('/register/cancel/:registrationId', verifyFirebaseToken(), cancelMealRegistration);
-router.get('/total/:email', verifyFirebaseToken(), getTotalMealsForUser);
+router.get('/available', verifyFirebaseToken(), validateRequest({ query: availableMealsQuerySchema }), getAvailableMeals);
+router.post('/register', verifyFirebaseToken(), validateRequest({ body: registerMealBodySchema }), registerMeal);
+router.post('/bulk-register', verifyFirebaseToken(), validateRequest({ query: bulkRegisterMealsQuerySchema }), bulkToggleMealsForUser);
+router.patch(
+  '/register/:registrationId',
+  verifyFirebaseToken(),
+  validateRequest({ params: registrationIdParamsSchema, body: updateMealRegistrationBodySchema }),
+  updateMealRegistration
+);
+router.delete(
+  '/register/cancel/:registrationId',
+  verifyFirebaseToken(),
+  validateRequest({ params: registrationIdParamsSchema }),
+  cancelMealRegistration
+);
+router.get(
+  '/total/:email',
+  verifyFirebaseToken(),
+  validateRequest({ params: totalMealsParamsSchema, query: totalMealsQuerySchema }),
+  getTotalMealsForUser
+);
 
-module.exports = router;
-
+export = router;

@@ -1,4 +1,4 @@
-// @ts-nocheck
+import type { Request, Response } from 'express';
 const {
   finalizeMonthSummary,
   getFinalizationByMonth,
@@ -8,7 +8,7 @@ const {
 } = require('./finalization.service');
 const { asyncHandler } = require('../shared/controller.utils');
 
-const finalizeMonth = asyncHandler(async (req, res) => {
+const finalizeMonth = asyncHandler(async (req: Request, res: Response) => {
   const result = await finalizeMonthSummary(req.body.month, req.user?._id);
   return res.status(201).json({
     message: 'Month finalized successfully',
@@ -17,22 +17,22 @@ const finalizeMonth = asyncHandler(async (req, res) => {
   });
 });
 
-const getMonthFinalization = asyncHandler(async (req, res) => {
+const getMonthFinalization = asyncHandler(async (req: Request, res: Response) => {
   const result = await getFinalizationByMonth(req.params.month);
   return res.status(200).json(result);
 });
 
-const getMyFinalizationData = asyncHandler(async (req, res) => {
-  const result = await getCurrentUserFinalization(req.user?._id.toString(), req.query.month);
+const getMyFinalizationData = asyncHandler(async (req: Request, res: Response) => {
+  const result = await getCurrentUserFinalization(req.user?._id?.toString(), req.query.month);
   return res.status(200).json(result);
 });
 
-const getAllFinalizations = asyncHandler(async (req, res) => {
+const getAllFinalizations = asyncHandler(async (req: Request, res: Response) => {
   const result = await listFinalizations();
   return res.status(200).json(result);
 });
 
-const undoMonthFinalization = asyncHandler(async (req, res) => {
+const undoMonthFinalization = asyncHandler(async (req: Request, res: Response) => {
   const result = await undoFinalizationByMonth(req.params.month);
   return res.status(200).json({
     message: `Finalization for ${req.params.month} has been undone successfully`,
@@ -40,11 +40,10 @@ const undoMonthFinalization = asyncHandler(async (req, res) => {
   });
 });
 
-module.exports = {
+export {
   finalizeMonth,
   getMonthFinalization,
   getMyFinalizationData,
   getAllFinalizations,
   undoMonthFinalization
 };
-

@@ -1,4 +1,4 @@
-// @ts-nocheck
+import type { Request, Response } from 'express';
 const {
   listBalances,
   getBalanceByUserId,
@@ -6,24 +6,23 @@ const {
 } = require('./balances.service');
 const { asyncHandler } = require('../shared/controller.utils');
 
-const getAllBalances = asyncHandler(async (req, res) => {
+const getAllBalances = asyncHandler(async (req: Request, res: Response) => {
   const result = await listBalances();
   return res.status(200).json(result);
 });
 
-const getUserBalance = asyncHandler(async (req, res) => {
+const getUserBalance = asyncHandler(async (req: Request, res: Response) => {
   const result = await getBalanceByUserId(req.params.userId);
   return res.status(200).json(result);
 });
 
-const getMyBalance = asyncHandler(async (req, res) => {
+const getMyBalance = asyncHandler(async (req: Request, res: Response) => {
   const result = await getBalanceForCurrentUser(req.user?._id);
   return res.status(200).json(result);
 });
 
-module.exports = {
+export {
   getAllBalances,
   getUserBalance,
   getMyBalance
 };
-
