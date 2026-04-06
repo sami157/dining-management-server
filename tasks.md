@@ -4,25 +4,6 @@
 
 ## Medium Priority
 
-### Business Logic Cleanup
-
-- Unify role logic around `admin` and `super_admin`.
-  - Some service paths still treat them differently in ways that look accidental, especially around meal registration updates.
-
-- Review reporting-only fields.
-  - Fields like `totalUserDeposits` in finalization should be explicitly marked as reporting values if they are not part of balance math.
-
-### Runtime and Infrastructure
-
-- Improve server startup resilience.
-  - Add explicit error handling around Mongo connection startup instead of only chaining `.then()` in `index.ts`.
-
-- Keep the Mongo client handle intentionally.
-  - Avoid shadowing the top-level `client` variable so graceful shutdown and future connection lifecycle management are possible.
-
-- Add structured logging.
-  - Replace ad hoc `console.error` calls with consistent request-aware logging.
-
 ### API Design and Maintainability
 
 - Reduce repeated collection lookups.
@@ -30,9 +11,6 @@
 
 - Consider module boundaries.
   - Split large service files into smaller units by feature area, especially finance- and meal-related services.
-
-- Avoid repeated user lookups when possible.
-  - Consider storing minimal auth claims on `req.auth` and the Mongo user on `req.user` with a deliberate shared type.
 
 ### Post-Deploy Date Cleanup
 
@@ -85,3 +63,11 @@
   - `mealRegistrations(userId, serviceDate, mealType)`
   - `memberBalances.userId`
   - `monthlyFinalization.month`
+
+### Runtime and Infrastructure
+
+- Improved server startup resilience.
+  - `index.ts` now handles Mongo startup failure explicitly instead of failing silently.
+
+- Kept the Mongo client handle intentionally.
+  - `config/connectMongodb.ts` now preserves and reuses the shared client handle for sessions and transactions.

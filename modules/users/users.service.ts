@@ -2,13 +2,14 @@ import { ObjectId } from 'mongodb';
 const { getCollections } = require('../../config/connectMongodb');
 const admin = require('../../config/firebaseAdmin');
 const { createHttpError } = require('../finance/finance.utils');
-const { assertAllowedRole } = require('../shared/service-rules');
+const { assertRolePolicy } = require('../shared/service-rules');
+import type { AppUser, AuthClaims } from '../../types/auth';
 
 const VALID_ROLES = ['admin', 'manager', 'member', 'moderator', 'staff', 'super_admin'];
 
 type UserRole = typeof VALID_ROLES[number];
 
-type UserRecord = {
+type UserRecord = AppUser & {
   _id?: ObjectId;
   firebaseUid?: string;
   email?: string;
@@ -43,12 +44,7 @@ type UserPayload = {
   department?: string;
 };
 
-type FirebaseToken = {
-  uid?: string;
-  email?: string;
-};
-
-const registerOrSyncUser = async (payload: UserPayload, firebaseUserToken: FirebaseToken) => {
+const registerOrSyncUser = async (payload: UserPayload, firebaseUserToken?: AuthClaims) => {
   const { name, building, room, email, mobile, designation, bank, department } = payload;
   const firebaseUid = firebaseUserToken?.uid;
   const tokenEmail = firebaseUserToken?.email;
@@ -143,9 +139,13 @@ const registerOrSyncUser = async (payload: UserPayload, firebaseUserToken: Fireb
   };
 };
 
-const getUserProfileByEmail = async (email: string) => {
+const getUserProfileById = async (userId?: ObjectId) => {
+  if (!userId) {
+    throw createHttpError(401, 'Authenticated application user is required');
+  }
+
   const { users } = await getCollections();
-  const user = await users.findOne({ email }) as UserRecord | null;
+  const user = await users.findOne({ _id: userId }) as UserRecord | null;
 
   if (!user) {
     throw createHttpError(404, 'User not found');
@@ -154,7 +154,11 @@ const getUserProfileByEmail = async (email: string) => {
   return user;
 };
 
-const updateUserProfileByEmail = async (email: string, payload: UserPayload) => {
+const updateUserProfileById = async (userId: ObjectId | undefined, payload: UserPayload) => {
+  if (!userId) {
+    throw createHttpError(401, 'Authenticated application user is required');
+  }
+
   const { name, building, room, mobile, designation, department } = payload;
   const updateData: Partial<UserRecord> = { updatedAt: new Date() };
 
@@ -167,7 +171,7 @@ const updateUserProfileByEmail = async (email: string, payload: UserPayload) => 
 
   const { users } = await getCollections();
   const user = await users.findOneAndUpdate(
-    { email },
+    { _id: userId },
     { $set: updateData },
     { returnDocument: 'after' }
   ) as UserRecord | null;
@@ -180,7 +184,7 @@ const updateUserProfileByEmail = async (email: string, payload: UserPayload) => 
 };
 
 const updateUserRoleById = async (userId: string, role: UserRole, currentUserRole: string) => {
-  assertAllowedRole(currentUserRole, ['admin', 'manager'], 'Only admins and managers can update user roles');
+  assertRolePolicy(currentUserRole, 'userRoleManagement', 'Only admins, managers, and super admins can update user roles');
 
   if (!ObjectId.isValid(userId)) {
     throw createHttpError(400, 'Invalid user ID');
@@ -209,7 +213,7 @@ const updateFixedDepositByUserId = async (userId: string, fixedDeposit: number, 
     throw createHttpError(400, 'Invalid user ID');
   }
 
-  assertAllowedRole(currentUserRole, ['admin', 'super_admin']);
+  assertRolePolicy(currentUserRole, 'memberFinanceManagement');
 
   const { users } = await getCollections();
   const user = await users.findOneAndUpdate(
@@ -230,7 +234,7 @@ const updateMosqueFeeByUserId = async (userId: string, mosqueFee: number, curren
     throw createHttpError(400, 'Invalid user ID');
   }
 
-  assertAllowedRole(currentUserRole, ['admin', 'super_admin']);
+  assertRolePolicy(currentUserRole, 'memberFinanceManagement');
 
   const { users } = await getCollections();
   const user = await users.findOneAndUpdate(
@@ -287,8 +291,8 @@ const checkUserExistsByEmail = async (email: string) => {
 
 export = {
   registerOrSyncUser,
-  getUserProfileByEmail,
-  updateUserProfileByEmail,
+  getUserProfileById,
+  updateUserProfileById,
   updateUserRoleById,
   updateFixedDepositByUserId,
   updateMosqueFeeByUserId,

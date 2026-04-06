@@ -1,6 +1,7 @@
 "use strict";
 const { createHttpError } = require('../../middleware/errorHandler');
 const { calculateMealDeadline } = require('../meal-deadlines/meal-deadlines.service');
+const { roleMatchesPolicy } = require('./authorization');
 const hasAllowedRole = (currentRole, allowedRoles = []) => {
     return allowedRoles.includes(currentRole);
 };
@@ -9,7 +10,12 @@ const assertAllowedRole = (currentRole, allowedRoles = [], message = 'You are no
         throw createHttpError(403, message);
     }
 };
-const isPrivilegedRole = (currentRole) => hasAllowedRole(currentRole, ['admin', 'super_admin']);
+const assertRolePolicy = (currentRole, policyName, message = 'You are not authorized') => {
+    if (!roleMatchesPolicy(currentRole, policyName)) {
+        throw createHttpError(403, message);
+    }
+};
+const isPrivilegedRole = (currentRole) => roleMatchesPolicy(currentRole, 'mealRegistrationOverride');
 const assertMonthIsNotFinalized = async (monthlyFinalization, month, options = {}) => {
     const finalized = await monthlyFinalization.findOne({ month }, options);
     if (finalized) {
@@ -34,6 +40,7 @@ const assertRegistrationOwnershipOrPrivileged = (registration, currentUser, mess
 module.exports = {
     hasAllowedRole,
     assertAllowedRole,
+    assertRolePolicy,
     isPrivilegedRole,
     assertMonthIsNotFinalized,
     assertMealDeadlineNotPassed,

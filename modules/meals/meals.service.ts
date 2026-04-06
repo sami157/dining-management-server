@@ -12,11 +12,12 @@ const {
   getMealDeadlineConfig
 } = require('../meal-deadlines/meal-deadlines.service');
 const {
-  assertAllowedRole,
+  assertRolePolicy,
   assertMealDeadlineNotPassed,
   assertRegistrationOwnershipOrPrivileged,
   isPrivilegedRole
 } = require('../shared/service-rules');
+import type { AppUser } from '../../types/auth';
 
 type MealOption = {
   mealType: string;
@@ -45,7 +46,7 @@ type RegistrationRecord = {
   mealDate?: string;
 };
 
-type UserRecord = {
+type UserRecord = AppUser & {
   _id: ObjectId;
   name?: string;
   email?: string;
@@ -142,7 +143,7 @@ const createMealRegistration = async (payload: MealRegistrationPayload, currentU
   const currentTime = new Date();
 
   if (requestUserId) {
-    assertAllowedRole(currentUser.role, ['admin', 'super_admin'], 'Not authorized to register for others');
+    assertRolePolicy(currentUser.role, 'mealRegistrationOverride', 'Not authorized to register for others');
     userId = new ObjectId(requestUserId);
   }
 
@@ -203,10 +204,8 @@ const createMealRegistration = async (payload: MealRegistrationPayload, currentU
   }
 
   if (isLateRegistration) {
-    const [byPerson, forPerson] = await Promise.all([
-      users.findOne({ _id: new ObjectId(currentUser?._id) }, { projection: { name: 1 } }) as Promise<UserRecord | null>,
-      users.findOne({ _id: userId }, { projection: { name: 1 } }) as Promise<UserRecord | null>
-    ]);
+    const byPerson = { _id: currentUser._id, name: currentUser.name };
+    const forPerson = await users.findOne({ _id: userId }, { projection: { name: 1 } }) as UserRecord | null;
 
     await systemLogs.insertOne({
       type: 'meal-on',
@@ -275,7 +274,6 @@ const removeMealRegistration = async (registrationId: string, currentUser: UserR
 
   const { users, mealRegistrations, mealSchedules, systemLogs } = await getCollections();
   const mealDeadlineConfig = await getMealDeadlineConfig();
-  const user = await users.findOne({ _id: currentUser?._id }) as UserRecord | null;
   const registration = await mealRegistrations.findOne({ _id: new ObjectId(registrationId) }) as RegistrationRecord | null;
 
   if (!registration) {
@@ -284,7 +282,7 @@ const removeMealRegistration = async (registrationId: string, currentUser: UserR
 
   const { isOwner } = assertRegistrationOwnershipOrPrivileged(registration, currentUser, 'You can only cancel your own registration');
 
-  if (!isPrivilegedRole(user.role)) {
+  if (!isPrivilegedRole(currentUser.role)) {
     const schedule = await mealSchedules.findOne(buildCanonicalServiceDateEqualityQuery(registration.serviceDate)) as ScheduleRecord | null;
     if (!schedule) {
       throw createHttpError(404, 'Meal schedule not found');
@@ -305,10 +303,8 @@ const removeMealRegistration = async (registrationId: string, currentUser: UserR
   }
 
   if (!isOwner) {
-    const [byPerson, forPerson] = await Promise.all([
-      users.findOne({ _id: new ObjectId(currentUser?._id) }, { projection: { name: 1 } }) as Promise<UserRecord | null>,
-      users.findOne({ _id: registration.userId }, { projection: { name: 1 } }) as Promise<UserRecord | null>
-    ]);
+    const byPerson = { _id: currentUser._id, name: currentUser.name };
+    const forPerson = await users.findOne({ _id: registration.userId }, { projection: { name: 1 } }) as UserRecord | null;
 
     await systemLogs.insertOne({
       type: 'meal-off',

@@ -3,7 +3,7 @@ const mongodb_1 = require("mongodb");
 const { getCollections } = require('../../config/connectMongodb');
 const admin = require('../../config/firebaseAdmin');
 const { createHttpError } = require('../finance/finance.utils');
-const { assertAllowedRole } = require('../shared/service-rules');
+const { assertRolePolicy } = require('../shared/service-rules');
 const VALID_ROLES = ['admin', 'manager', 'member', 'moderator', 'staff', 'super_admin'];
 const registerOrSyncUser = async (payload, firebaseUserToken) => {
     const { name, building, room, email, mobile, designation, bank, department } = payload;
@@ -119,7 +119,7 @@ const updateUserProfileByEmail = async (email, payload) => {
     return user;
 };
 const updateUserRoleById = async (userId, role, currentUserRole) => {
-    assertAllowedRole(currentUserRole, ['admin', 'manager'], 'Only admins and managers can update user roles');
+    assertRolePolicy(currentUserRole, 'userRoleManagement', 'Only admins, managers, and super admins can update user roles');
     if (!mongodb_1.ObjectId.isValid(userId)) {
         throw createHttpError(400, 'Invalid user ID');
     }
@@ -137,7 +137,7 @@ const updateFixedDepositByUserId = async (userId, fixedDeposit, currentUserRole)
     if (!mongodb_1.ObjectId.isValid(userId)) {
         throw createHttpError(400, 'Invalid user ID');
     }
-    assertAllowedRole(currentUserRole, ['admin', 'super_admin']);
+    assertRolePolicy(currentUserRole, 'memberFinanceManagement');
     const { users } = await getCollections();
     const user = await users.findOneAndUpdate({ _id: new mongodb_1.ObjectId(userId) }, { $set: { fixedDeposit, updatedAt: new Date() } }, { returnDocument: 'after' });
     if (!user) {
@@ -149,7 +149,7 @@ const updateMosqueFeeByUserId = async (userId, mosqueFee, currentUserRole) => {
     if (!mongodb_1.ObjectId.isValid(userId)) {
         throw createHttpError(400, 'Invalid user ID');
     }
-    assertAllowedRole(currentUserRole, ['admin', 'super_admin']);
+    assertRolePolicy(currentUserRole, 'memberFinanceManagement');
     const { users } = await getCollections();
     const user = await users.findOneAndUpdate({ _id: new mongodb_1.ObjectId(userId) }, { $set: { mosqueFee, updatedAt: new Date() } }, { returnDocument: 'after' });
     if (!user) {

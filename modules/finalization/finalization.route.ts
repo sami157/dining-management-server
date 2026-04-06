@@ -1,6 +1,7 @@
 import express from 'express';
 import verifyFirebaseToken = require('../../middleware/verifyFirebaseToken');
 import validateRequest = require('../../middleware/validateRequest');
+import { ROLE_POLICIES } from '../shared/authorization';
 import {
   finalizeMonth,
   getAllFinalizations,
@@ -16,13 +17,13 @@ import {
 
 const router = express.Router();
 
-router.post('/finalize', verifyFirebaseToken(['admin', 'super_admin']), validateRequest({ body: finalizeMonthBodySchema }), finalizeMonth);
+router.post('/finalize', verifyFirebaseToken(ROLE_POLICIES.monthFinalizationManagement), validateRequest({ body: finalizeMonthBodySchema }), finalizeMonth);
 router.get('/finalization/:month', verifyFirebaseToken(), validateRequest({ params: monthParamsSchema }), getMonthFinalization);
 router.get('/user-finalization', verifyFirebaseToken(), validateRequest({ query: currentUserFinalizationQuerySchema }), getMyFinalizationData);
 router.get('/finalizations', verifyFirebaseToken(), getAllFinalizations);
 router.delete(
   '/finalization/:month',
-  verifyFirebaseToken(['admin', 'super_admin']),
+  verifyFirebaseToken(ROLE_POLICIES.monthFinalizationManagement),
   validateRequest({ params: monthParamsSchema }),
   undoMonthFinalization
 );

@@ -1,21 +1,10 @@
-import type { DecodedIdToken } from 'firebase-admin/auth';
-
-type AppUser = {
-  _id: {
-    toString(): string;
-    equals?(value: unknown): boolean;
-  };
-  email?: string;
-  role?: string;
-  name?: string;
-  fixedDeposit?: number;
-  mosqueFee?: number;
-};
+import type { AuthClaims, AppUser } from './auth';
 
 declare global {
   namespace Express {
     interface Request {
-      firebaseUser?: DecodedIdToken;
+      requestId?: string;
+      auth?: AuthClaims;
       user?: AppUser | null;
     }
   }

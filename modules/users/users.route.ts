@@ -1,6 +1,7 @@
 import express from 'express';
 import verifyFirebaseToken = require('../../middleware/verifyFirebaseToken');
 import validateRequest = require('../../middleware/validateRequest');
+import { ROLE_POLICIES } from '../shared/authorization';
 import {
   checkUserWithEmail,
   createUser,
@@ -30,19 +31,19 @@ router.get('/profile', verifyFirebaseToken(), getUserProfile);
 router.put('/profile', verifyFirebaseToken(), validateRequest({ body: updateUserProfileBodySchema }), updateUserProfile);
 router.put(
   '/role/:userId',
-  verifyFirebaseToken(['admin', 'manager', 'super_admin']),
+  verifyFirebaseToken(ROLE_POLICIES.userRoleManagement),
   validateRequest({ params: userIdParamsSchema, body: updateUserRoleBodySchema }),
   updateUserRole
 );
 router.put(
   '/fixedDeposit/:userId',
-  verifyFirebaseToken(['admin', 'super_admin']),
+  verifyFirebaseToken(ROLE_POLICIES.memberFinanceManagement),
   validateRequest({ params: userIdParamsSchema, body: updateFixedDepositBodySchema }),
   updateFixedDeposit
 );
 router.put(
   '/mosqueFee/:userId',
-  verifyFirebaseToken(['admin', 'super_admin']),
+  verifyFirebaseToken(ROLE_POLICIES.memberFinanceManagement),
   validateRequest({ params: userIdParamsSchema, body: updateMosqueFeeBodySchema }),
   updateMosqueFee
 );

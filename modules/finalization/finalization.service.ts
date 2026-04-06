@@ -181,7 +181,8 @@ const finalizeMonthSummary = async (month: string, managerId: unknown) => {
     for (const user of allUsers) {
       const userId = user._id.toString();
       const totalMeals = userMealsMap[userId] || 0;
-      const totalUserDeposits = depositsByUser[userId] || 0;
+      // Reporting-only: deposits are already reflected in previousBalance via memberBalances.
+      const totalUserDepositsForReporting = depositsByUser[userId] || 0;
       const mealCost = totalMeals * mealRate;
       const previousBalance = balanceByUser[userId] || 0;
       const mosqueFee = user.mosqueFee || 0;
@@ -195,7 +196,7 @@ const finalizeMonthSummary = async (month: string, managerId: unknown) => {
         userId,
         userName: user.name,
         totalMeals,
-        totalDeposits: totalUserDeposits,
+        totalDeposits: totalUserDepositsForReporting,
         mealCost,
         mosqueFee,
         previousBalance,

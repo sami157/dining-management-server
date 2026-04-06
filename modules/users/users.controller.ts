@@ -1,8 +1,8 @@
 import type { Request, Response } from 'express';
 const {
   registerOrSyncUser,
-  getUserProfileByEmail,
-  updateUserProfileByEmail,
+  getUserProfileById,
+  updateUserProfileById,
   updateUserRoleById,
   updateFixedDepositByUserId,
   updateMosqueFeeByUserId,
@@ -13,7 +13,7 @@ const {
 const { asyncHandler } = require('../shared/controller.utils');
 
 const createUser = asyncHandler(async (req: Request, res: Response) => {
-  const result = await registerOrSyncUser(req.body, req.firebaseUser);
+  const result = await registerOrSyncUser(req.body, req.auth);
   return res.status(result.status).json({
     message: result.message,
     userId: result.userId,
@@ -22,12 +22,12 @@ const createUser = asyncHandler(async (req: Request, res: Response) => {
 });
 
 const getUserProfile = asyncHandler(async (req: Request, res: Response) => {
-  const user = await getUserProfileByEmail(req.user?.email);
+  const user = await getUserProfileById(req.user?._id);
   return res.status(200).json({ user });
 });
 
 const updateUserProfile = asyncHandler(async (req: Request, res: Response) => {
-  const user = await updateUserProfileByEmail(req.user?.email, req.body);
+  const user = await updateUserProfileById(req.user?._id, req.body);
   return res.status(200).json({ message: 'Profile updated successfully', user });
 });
 

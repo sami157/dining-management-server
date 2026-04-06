@@ -1,6 +1,7 @@
 import express from 'express';
 import verifyFirebaseToken = require('../../middleware/verifyFirebaseToken');
 import validateRequest = require('../../middleware/validateRequest');
+import { ROLE_POLICIES } from '../shared/authorization';
 import {
   addDeposit,
   deleteDeposit,
@@ -18,18 +19,18 @@ import {
 
 const router = express.Router();
 
-router.post('/deposits/add', verifyFirebaseToken(['admin', 'super_admin']), validateRequest({ body: addDepositBodySchema }), addDeposit);
+router.post('/deposits/add', verifyFirebaseToken(ROLE_POLICIES.depositManagement), validateRequest({ body: addDepositBodySchema }), addDeposit);
 router.get('/deposits', verifyFirebaseToken(), validateRequest({ query: depositsQuerySchema }), getAllDeposits);
 router.get('/user-deposit', verifyFirebaseToken(), validateRequest({ query: currentUserDepositQuerySchema }), getMonthlyDepositByUserId);
 router.put(
   '/deposits/:depositId',
-  verifyFirebaseToken(['admin', 'super_admin']),
+  verifyFirebaseToken(ROLE_POLICIES.depositManagement),
   validateRequest({ params: depositIdParamsSchema, body: updateDepositBodySchema }),
   updateDeposit
 );
 router.delete(
   '/deposits/:depositId',
-  verifyFirebaseToken(['admin', 'super_admin']),
+  verifyFirebaseToken(ROLE_POLICIES.depositManagement),
   validateRequest({ params: depositIdParamsSchema }),
   deleteDeposit
 );

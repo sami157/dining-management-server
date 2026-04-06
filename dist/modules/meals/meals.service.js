@@ -4,7 +4,7 @@ const { getCollections } = require('../../config/connectMongodb');
 const { createHttpError } = require('../finance/finance.utils');
 const { formatServiceDate, getMonthServiceDateRange, normalizeBusinessDateFields, serviceDateToLegacyDate } = require('../shared/date.utils');
 const { calculateMealDeadline, getMealDeadlineConfig } = require('../meal-deadlines/meal-deadlines.service');
-const { assertAllowedRole, assertMealDeadlineNotPassed, assertRegistrationOwnershipOrPrivileged, isPrivilegedRole } = require('../shared/service-rules');
+const { assertRolePolicy, assertMealDeadlineNotPassed, assertRegistrationOwnershipOrPrivileged, isPrivilegedRole } = require('../shared/service-rules');
 const buildCanonicalServiceDateRangeQuery = (startDate, endDate) => ({
     serviceDate: { $gte: startDate, $lte: endDate }
 });
@@ -70,7 +70,7 @@ const createMealRegistration = async (payload, currentUser) => {
     let isLateRegistration = false;
     const currentTime = new Date();
     if (requestUserId) {
-        assertAllowedRole(currentUser.role, ['admin', 'super_admin'], 'Not authorized to register for others');
+        assertRolePolicy(currentUser.role, 'mealRegistrationOverride', 'Not authorized to register for others');
         userId = new mongodb_1.ObjectId(requestUserId);
     }
     if (!date || !mealType) {

@@ -3,6 +3,7 @@ import admin = require('../config/firebaseAdmin');
 const { getCollections } = require('../config/connectMongodb');
 const { createHttpError } = require('./errorHandler');
 import type { UserRole } from '../modules/shared/validation';
+import type { AppUser, AuthClaims } from '../types/auth';
 
 type VerifyFirebaseTokenOptions = {
   allowMissingUser?: boolean;
@@ -44,7 +45,7 @@ const verifyFirebaseToken = (
       }
 
       const { users } = await getCollections();
-      const user = await users.findOne({ email: decoded.email });
+      const user = await users.findOne({ email: decoded.email }) as AppUser | null;
 
       const requiresAppUser = !options.allowMissingUser;
 
@@ -66,7 +67,13 @@ const verifyFirebaseToken = (
         }));
       }
 
-      req.firebaseUser = decoded;
+      const auth: AuthClaims = {
+        uid: decoded.uid,
+        email: decoded.email || '',
+        emailVerified: Boolean(decoded.email_verified)
+      };
+
+      req.auth = auth;
       req.user = user || null;
       return next();
     } catch {

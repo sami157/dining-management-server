@@ -1,5 +1,6 @@
 const { createHttpError } = require('../../middleware/errorHandler');
 const { calculateMealDeadline } = require('../meal-deadlines/meal-deadlines.service');
+const { roleMatchesPolicy } = require('./authorization');
 
 const hasAllowedRole = (currentRole: string | undefined, allowedRoles: string[] = []) => {
   return allowedRoles.includes(currentRole);
@@ -11,7 +12,17 @@ const assertAllowedRole = (currentRole: string | undefined, allowedRoles: string
   }
 };
 
-const isPrivilegedRole = (currentRole: string | undefined) => hasAllowedRole(currentRole, ['admin', 'super_admin']);
+const assertRolePolicy = (
+  currentRole: string | undefined,
+  policyName: string,
+  message = 'You are not authorized'
+) => {
+  if (!roleMatchesPolicy(currentRole, policyName)) {
+    throw createHttpError(403, message);
+  }
+};
+
+const isPrivilegedRole = (currentRole: string | undefined) => roleMatchesPolicy(currentRole, 'mealRegistrationOverride');
 
 const assertMonthIsNotFinalized = async (monthlyFinalization: any, month: string, options = {}) => {
   const finalized = await monthlyFinalization.findOne({ month }, options);
@@ -56,6 +67,7 @@ const assertRegistrationOwnershipOrPrivileged = (registration, currentUser, mess
 export = {
   hasAllowedRole,
   assertAllowedRole,
+  assertRolePolicy,
   isPrivilegedRole,
   assertMonthIsNotFinalized,
   assertMealDeadlineNotPassed,

@@ -1,5 +1,6 @@
 import type { NextFunction, Request, RequestHandler, Response } from 'express';
 import { ZodError } from 'zod';
+import { getRequestLogContext, logError } from '../modules/shared/logger';
 
 type HttpErrorOptions = {
   code?: string;
@@ -46,7 +47,20 @@ const globalErrorHandler = (error: HttpError, req: Request, res: Response, next:
   const status = isValidationError ? 400 : (error.status || 500);
   const message = isValidationError ? 'Validation failed' : (error.message || 'Internal Server Error');
 
-  console.error(`[${req.method} ${req.originalUrl}]`, error);
+  logError('request_error', {
+    ...getRequestLogContext(req),
+    status,
+    code: error.code,
+    details: isValidationError
+      ? error.issues.map((issue) => ({
+        path: issue.path.join('.'),
+        message: issue.message
+      }))
+      : error.details,
+    errorName: error.name,
+    errorMessage: error.message,
+    stack: error.stack
+  });
 
   const payload: {
     error: string;
