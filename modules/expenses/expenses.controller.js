@@ -4,47 +4,31 @@ const {
   updateExpenseById,
   deleteExpenseById
 } = require('./expenses.service');
-const { handleControllerError } = require('../finance/finance.utils');
+const { asyncHandler } = require('../shared/controller.utils');
 
-const addExpense = async (req, res) => {
-  try {
-    const result = await addExpenseEntry(req.body, req.user?._id);
-    return res.status(201).json({
-      message: 'Expense added successfully',
-      expenseId: result.expenseId,
-      expense: result.expense
-    });
-  } catch (error) {
-    return handleControllerError(res, error, 'Error adding expense:');
-  }
-};
+const addExpense = asyncHandler(async (req, res) => {
+  const result = await addExpenseEntry(req.body, req.user?._id);
+  return res.status(201).json({
+    message: 'Expense added successfully',
+    expenseId: result.expenseId,
+    expense: result.expense
+  });
+});
 
-const getAllExpenses = async (req, res) => {
-  try {
-    const result = await listExpenses(req.query);
-    return res.status(200).json(result);
-  } catch (error) {
-    return handleControllerError(res, error, 'Error fetching expenses:');
-  }
-};
+const getAllExpenses = asyncHandler(async (req, res) => {
+  const result = await listExpenses(req.query);
+  return res.status(200).json(result);
+});
 
-const updateExpense = async (req, res) => {
-  try {
-    await updateExpenseById(req.params.expenseId, req.body);
-    return res.status(200).json({ message: 'Expense updated successfully' });
-  } catch (error) {
-    return handleControllerError(res, error, 'Error updating expense:');
-  }
-};
+const updateExpense = asyncHandler(async (req, res) => {
+  await updateExpenseById(req.params.expenseId, req.body);
+  return res.status(200).json({ message: 'Expense updated successfully' });
+});
 
-const deleteExpense = async (req, res) => {
-  try {
-    await deleteExpenseById(req.params.expenseId);
-    return res.status(200).json({ message: 'Expense deleted successfully' });
-  } catch (error) {
-    return handleControllerError(res, error, 'Error deleting expense:');
-  }
-};
+const deleteExpense = asyncHandler(async (req, res) => {
+  await deleteExpenseById(req.params.expenseId);
+  return res.status(200).json({ message: 'Expense deleted successfully' });
+});
 
 module.exports = {
   addExpense,

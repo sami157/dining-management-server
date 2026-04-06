@@ -3,35 +3,27 @@ const {
   updateMealDeadlineConfig,
   validateMealDeadlineConfig
 } = require('./meal-deadlines.service');
+const { createHttpError } = require('../../middleware/errorHandler');
+const { asyncHandler } = require('../shared/controller.utils');
 
-const getGlobalMealDeadlines = async (req, res) => {
-  try {
-    const mealDeadlines = await getMealDeadlineConfig();
-    return res.status(200).json({ mealDeadlines });
-  } catch (error) {
-    console.error('Error fetching meal deadlines:', error);
-    return res.status(500).json({ error: 'Failed to fetch meal deadlines' });
+const getGlobalMealDeadlines = asyncHandler(async (req, res) => {
+  const mealDeadlines = await getMealDeadlineConfig();
+  return res.status(200).json({ mealDeadlines });
+});
+
+const updateGlobalMealDeadlines = asyncHandler(async (req, res) => {
+  const validationError = validateMealDeadlineConfig(req.body);
+  if (validationError) {
+    throw createHttpError(400, validationError);
   }
-};
 
-const updateGlobalMealDeadlines = async (req, res) => {
-  try {
-    const validationError = validateMealDeadlineConfig(req.body);
-    if (validationError) {
-      return res.status(400).json({ error: validationError });
-    }
+  const mealDeadlines = await updateMealDeadlineConfig(req.body, req.user?._id || null);
 
-    const mealDeadlines = await updateMealDeadlineConfig(req.body, req.user?._id || null);
-
-    return res.status(200).json({
-      message: 'Meal deadlines updated successfully',
-      mealDeadlines
-    });
-  } catch (error) {
-    console.error('Error updating meal deadlines:', error);
-    return res.status(500).json({ error: 'Failed to update meal deadlines' });
-  }
-};
+  return res.status(200).json({
+    message: 'Meal deadlines updated successfully',
+    mealDeadlines
+  });
+});
 
 module.exports = {
   getGlobalMealDeadlines,

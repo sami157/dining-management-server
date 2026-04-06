@@ -1,7 +1,6 @@
 # Improvement Tasks
 
 ## Security and Access Control
-
 - Align route protection with controller rules.
   - Review routes like `PUT /users/role/:userId` so the route-level allowed roles and the controller-level role logic do not drift apart.
 

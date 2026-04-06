@@ -7,6 +7,7 @@ const usersRouter = require('./modules/users/users.route');
 const mealsRouter = require('./modules/meals/meals.route');
 const financeRouter = require('./modules/finance/finance.routes');
 const mealDeadlinesRouter = require('./modules/meal-deadlines/meal-deadlines.route');
+const { notFoundHandler, globalErrorHandler } = require('./middleware/errorHandler');
 
 const app = express()
 const port = process.env.PORT || 5000
@@ -25,6 +26,9 @@ app.use('/meal-deadlines', mealDeadlinesRouter);
 app.get('/', (req, res) => {
   res.send('Dining Management System server is running')
 })
+
+app.use(notFoundHandler);
+app.use(globalErrorHandler);
 
 connectMongoDB().then(() => {
   app.listen(port, () => {

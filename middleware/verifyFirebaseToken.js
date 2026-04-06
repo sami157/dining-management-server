@@ -1,5 +1,6 @@
 const admin = require("../config/firebaseAdmin");
 const { getCollections } = require("../config/connectMongodb");
+const { createHttpError } = require("./errorHandler");
 
 const verifyFirebaseToken = (allowedRoles = []) => {
     return async (req, res, next) => {
@@ -8,8 +9,7 @@ const verifyFirebaseToken = (allowedRoles = []) => {
             const idToken = authHeader?.split(" ")[1];
 
             if (!idToken) {
-                res.status(403).json({ message: "User not found" });
-                return;
+                return next(createHttpError(401, "Missing authorization token"));
             }
 
             const decoded = await admin.auth().verifyIdToken(idToken);
@@ -17,25 +17,22 @@ const verifyFirebaseToken = (allowedRoles = []) => {
             const user = await users.findOne({ email: decoded.email });
 
             if (!Array.isArray(allowedRoles)) {
-                res.status(500).json({ message: "Invalid auth middleware configuration" });
-                return;
+                return next(createHttpError(500, "Invalid auth middleware configuration"));
             }
 
             if (allowedRoles.length > 0 && !user) {
-                res.status(403).json({ message: "Unauthorized" });
-                return;
+                return next(createHttpError(403, "Unauthorized"));
             }
 
             if (allowedRoles.length > 0 && !allowedRoles.includes(user.role)) {
-                res.status(403).json({ message: "Forbidden" });
-                return;
+                return next(createHttpError(403, "Forbidden"));
             }
 
             req.firebaseUser = decoded;
             req.user = user || null;
-            next();
+            return next();
         } catch (err) {
-            res.status(403).json({ message: "Unauthorized" });
+            return next(createHttpError(403, "Unauthorized"));
         }
     };
 };
