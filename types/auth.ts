@@ -12,6 +12,7 @@ export type AppUser = {
   email?: string;
   role?: string;
   name?: string;
+  mealDefault?: boolean;
   fixedDeposit?: number;
   mosqueFee?: number;
 };

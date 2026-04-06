@@ -40,6 +40,7 @@ type UserSummary = {
   _id: ObjectId;
   name?: string;
   email?: string;
+  mealDefault?: boolean;
 };
 
 type RangePayload = {
@@ -57,6 +58,79 @@ const buildCanonicalServiceDateRangeQuery = (startDate: string, endDate: string)
 });
 
 const buildCanonicalServiceDateEqualityQuery = (serviceDate: string) => ({ serviceDate });
+
+const getAvailableMealTypes = (availableMeals: MealOption[] = []) => (
+  availableMeals.filter(meal => meal.isAvailable).map(meal => meal.mealType)
+);
+
+const buildDefaultUserRegistrations = async (
+  schedules: ScheduleRecord[],
+  scheduleToMealTypes: Map<string, string[]>
+) => {
+  if (schedules.length === 0) {
+    return [];
+  }
+
+  const { mealRegistrations, users } = await getCollections();
+  const defaultUsers = (await users.find(
+    { mealDefault: true },
+    { projection: { _id: 1 } }
+  ).toArray()) as Array<Pick<UserSummary, '_id'>>;
+
+  if (defaultUsers.length === 0) {
+    return [];
+  }
+
+  const serviceDates = schedules.map(schedule => schedule.serviceDate);
+  const relevantMealTypes = [...new Set(
+    schedules.flatMap(schedule => scheduleToMealTypes.get(schedule.serviceDate) || [])
+  )];
+
+  if (relevantMealTypes.length === 0) {
+    return [];
+  }
+
+  const existingRegistrations = (await mealRegistrations.find({
+    serviceDate: { $in: serviceDates },
+    mealType: { $in: relevantMealTypes }
+  }, {
+    projection: { userId: 1, serviceDate: 1, mealType: 1 }
+  }).toArray()) as Array<Pick<RegistrationRecord, 'userId' | 'serviceDate' | 'mealType'>>;
+
+  const existingKeys = new Set(
+    existingRegistrations.map(registration => `${registration.userId.toString()}|${registration.serviceDate}|${registration.mealType}`)
+  );
+
+  const registrations: RegistrationRecord[] = [];
+
+  for (const schedule of schedules) {
+    const mealTypes = scheduleToMealTypes.get(schedule.serviceDate) || [];
+    if (mealTypes.length === 0) {
+      continue;
+    }
+
+    for (const user of defaultUsers) {
+      for (const mealType of mealTypes) {
+        const key = `${user._id.toString()}|${schedule.serviceDate}|${mealType}`;
+        if (existingKeys.has(key)) {
+          continue;
+        }
+
+        existingKeys.add(key);
+        registrations.push({
+          userId: user._id,
+          date: schedule.date,
+          serviceDate: schedule.serviceDate,
+          mealType,
+          numberOfMeals: 1,
+          registeredAt: new Date()
+        });
+      }
+    }
+  }
+
+  return registrations;
+};
 
 const isWeekend = (date: Date) => {
   const day = date.getDay();
@@ -104,11 +178,11 @@ const generateSchedulesForRange = async ({ startDate, endDate }: RangePayload, m
     throw createHttpError(400, 'Date range cannot exceed 90 days');
   }
 
-  const { mealSchedules, mealRegistrations, users } = await getCollections();
-  const [existingSchedules, defaultUsers] = await Promise.all([
-    mealSchedules.find(buildCanonicalServiceDateRangeQuery(startDate, endDate), { projection: { serviceDate: 1 } }).toArray() as Promise<Array<Pick<ScheduleRecord, 'serviceDate'>>>,
-    users.find({ mealDefault: true }, { projection: { _id: 1 } }).toArray() as Promise<Array<Pick<UserSummary, '_id'>>>
-  ]);
+  const { mealSchedules, mealRegistrations } = await getCollections();
+  const existingSchedules = await mealSchedules.find(
+    buildCanonicalServiceDateRangeQuery(startDate, endDate),
+    { projection: { serviceDate: 1 } }
+  ).toArray() as Array<Pick<ScheduleRecord, 'serviceDate'>>;
 
   const existingDates = new Set(existingSchedules.map(schedule => schedule.serviceDate));
   const schedulesToCreate: ScheduleRecord[] = [];
@@ -140,39 +214,20 @@ const generateSchedulesForRange = async ({ startDate, endDate }: RangePayload, m
   }
 
   const result = await mealSchedules.insertMany(schedulesToCreate);
+  const scheduleToMealTypes = new Map(
+    schedulesToCreate.map(schedule => [schedule.serviceDate, getAvailableMealTypes(schedule.availableMeals)])
+  );
+  const registrations = await buildDefaultUserRegistrations(schedulesToCreate, scheduleToMealTypes);
 
-  if (defaultUsers.length > 0) {
-    const registrations: RegistrationRecord[] = [];
-
-    for (const schedule of schedulesToCreate) {
-      const availableMealTypes = schedule.availableMeals
-        .filter(meal => meal.isAvailable)
-        .map(meal => meal.mealType);
-
-      for (const user of defaultUsers) {
-        for (const mealType of availableMealTypes) {
-          registrations.push({
-            userId: user._id,
-            date: schedule.date,
-            serviceDate: schedule.serviceDate,
-            mealType,
-            numberOfMeals: 1,
-            registeredAt: new Date()
-          });
-        }
-      }
-    }
-
-    if (registrations.length > 0) {
-      await mealRegistrations.insertMany(registrations);
-    }
+  if (registrations.length > 0) {
+    await mealRegistrations.insertMany(registrations);
   }
 
   return {
     status: 201,
     message: `${result.insertedCount} schedules created successfully`,
     count: result.insertedCount,
-    registrationsCreated: defaultUsers.length * schedulesToCreate.length
+    registrationsCreated: registrations.length
   };
 };
 
@@ -207,6 +262,15 @@ const updateScheduleById = async (scheduleId: string, { isHoliday, availableMeal
     updateData.isHoliday = isHoliday;
   }
 
+  const { mealSchedules, mealRegistrations } = await getCollections();
+  const existingSchedule = await mealSchedules.findOne({ _id: new ObjectId(scheduleId) }) as ScheduleRecord | null;
+
+  if (!existingSchedule) {
+    throw createHttpError(404, 'Schedule not found');
+  }
+
+  const previousAvailableMealTypes = new Set(getAvailableMealTypes(existingSchedule.availableMeals));
+
   if (availableMeals) {
     updateData.availableMeals = availableMeals.map(meal => ({
       mealType: meal.mealType,
@@ -217,7 +281,6 @@ const updateScheduleById = async (scheduleId: string, { isHoliday, availableMeal
     }));
   }
 
-  const { mealSchedules, mealRegistrations } = await getCollections();
   const schedule = await mealSchedules.findOneAndUpdate(
     { _id: new ObjectId(scheduleId) },
     { $set: updateData },
@@ -228,6 +291,8 @@ const updateScheduleById = async (scheduleId: string, { isHoliday, availableMeal
     throw createHttpError(404, 'Schedule not found');
   }
 
+  const nextAvailableMealTypes = getAvailableMealTypes(schedule.availableMeals);
+
   const unavailableMealTypes = schedule.availableMeals
     .filter(meal => !meal.isAvailable)
     .map(meal => meal.mealType);
@@ -237,6 +302,19 @@ const updateScheduleById = async (scheduleId: string, { isHoliday, availableMeal
       ...buildCanonicalServiceDateEqualityQuery(schedule.serviceDate),
       mealType: { $in: unavailableMealTypes }
     });
+  }
+
+  const newlyAvailableMealTypes = nextAvailableMealTypes.filter(mealType => !previousAvailableMealTypes.has(mealType));
+
+  if (newlyAvailableMealTypes.length > 0) {
+    const registrations = await buildDefaultUserRegistrations(
+      [schedule],
+      new Map([[schedule.serviceDate, newlyAvailableMealTypes]])
+    );
+
+    if (registrations.length > 0) {
+      await mealRegistrations.insertMany(registrations);
+    }
   }
 
   return normalizeBusinessDateFields(schedule);

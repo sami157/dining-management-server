@@ -26,6 +26,7 @@ type UserRecord = AppUser & {
   designation?: string;
   department?: string;
   role?: UserRole;
+  mealDefault?: boolean;
   fixedDeposit?: number;
   mosqueFee?: number;
   createdAt?: Date;
@@ -42,10 +43,11 @@ type UserPayload = {
   designation?: string;
   bank?: string;
   department?: string;
+  mealDefault?: boolean;
 };
 
 const registerOrSyncUser = async (payload: UserPayload, firebaseUserToken?: AuthClaims) => {
-  const { name, building, room, email, mobile, designation, bank, department } = payload;
+  const { name, building, room, email, mobile, designation, bank, department, mealDefault } = payload;
   const firebaseUid = firebaseUserToken?.uid;
   const tokenEmail = firebaseUserToken?.email;
 
@@ -92,7 +94,8 @@ const registerOrSyncUser = async (payload: UserPayload, firebaseUserToken?: Auth
       mobile,
       bank,
       designation: designation || '',
-      department: department || ''
+      department: department || '',
+      mealDefault: Boolean(mealDefault)
     };
 
     await users.updateOne({ _id: existingUser._id }, { $set: updateData });
@@ -122,6 +125,7 @@ const registerOrSyncUser = async (payload: UserPayload, firebaseUserToken?: Auth
     designation: designation || '',
     department: department || '',
     role: 'member',
+    mealDefault: Boolean(mealDefault),
     fixedDeposit: 0,
     mosqueFee: 0,
     createdAt: now,
@@ -159,7 +163,7 @@ const updateUserProfileById = async (userId: ObjectId | undefined, payload: User
     throw createHttpError(401, 'Authenticated application user is required');
   }
 
-  const { name, building, room, mobile, designation, department } = payload;
+  const { name, building, room, mobile, designation, department, mealDefault } = payload;
   const updateData: Partial<UserRecord> = { updatedAt: new Date() };
 
   if (name) updateData.name = name;
@@ -168,6 +172,7 @@ const updateUserProfileById = async (userId: ObjectId | undefined, payload: User
   if (mobile) updateData.mobile = mobile;
   if (designation !== undefined) updateData.designation = designation;
   if (department !== undefined) updateData.department = department;
+  if (mealDefault !== undefined) updateData.mealDefault = mealDefault;
 
   const { users } = await getCollections();
   const user = await users.findOneAndUpdate(

@@ -14,7 +14,8 @@ const createUserBodySchema = z.object({
   mobile: z.string().min(1, 'mobile is required'),
   designation: z.string().trim().optional(),
   bank: z.any().optional(),
-  department: z.string().trim().optional()
+  department: z.string().trim().optional(),
+  mealDefault: z.boolean().optional()
 });
 
 const updateUserProfileBodySchema = z.object({
@@ -23,7 +24,8 @@ const updateUserProfileBodySchema = z.object({
   room: z.string().trim().optional(),
   mobile: z.string().min(1).optional(),
   designation: z.string().trim().optional(),
-  department: z.string().trim().optional()
+  department: z.string().trim().optional(),
+  mealDefault: z.boolean().optional()
 }).refine((data) => Object.keys(data).length > 0, {
   message: 'At least one profile field is required'
 });
