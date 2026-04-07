@@ -188,11 +188,24 @@ const updateUserProfileById = async (userId: ObjectId | undefined, payload: User
   return user;
 };
 
-const updateUserRoleById = async (userId: string, role: UserRole, currentUserRole: string) => {
-  assertRolePolicy(currentUserRole, 'userRoleManagement', 'Only admins, managers, and super admins can update user roles');
+const updateUserRoleById = async (
+  userId: string,
+  role: UserRole,
+  currentUserId: ObjectId | undefined,
+  currentUserRole: string
+) => {
+  assertRolePolicy(currentUserRole, 'memberFinanceManagement', 'Only admins and super admins can update user roles');
 
   if (!ObjectId.isValid(userId)) {
     throw createHttpError(400, 'Invalid user ID');
+  }
+
+  if (!currentUserId) {
+    throw createHttpError(401, 'Authenticated application user is required');
+  }
+
+  if (currentUserId.toString() === userId) {
+    throw createHttpError(400, 'You cannot change your own role');
   }
 
   if (!role || !VALID_ROLES.includes(role)) {
@@ -268,6 +281,16 @@ const listUsers = async ({ role, department }: { role?: UserRole; department?: s
   return { count: usersList.length, users: usersList, totalFixedDeposit };
 };
 
+const listAdmins = async () => {
+  const { users } = await getCollections();
+  const admins = await users.find(
+    { role: { $in: ['admin', 'super_admin'] } },
+    { projection: { _id: 1, name: 1, email: 1, role: 1, designation: 1, department: 1, photoURL: 1 } }
+  ).sort({ role: 1, name: 1 }).toArray() as UserRecord[];
+
+  return { count: admins.length, admins };
+};
+
 const getRoleByEmail = async (email: string) => {
   if (!email) {
     throw createHttpError(400, 'Email is required');
@@ -302,6 +325,7 @@ export = {
   updateFixedDepositByUserId,
   updateMosqueFeeByUserId,
   listUsers,
+  listAdmins,
   getRoleByEmail,
   checkUserExistsByEmail
 };

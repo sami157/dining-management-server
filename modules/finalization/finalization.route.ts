@@ -18,9 +18,9 @@ import {
 const router = express.Router();
 
 router.post('/finalize', verifyFirebaseToken(ROLE_POLICIES.monthFinalizationManagement), validateRequest({ body: finalizeMonthBodySchema }), finalizeMonth);
-router.get('/finalization/:month', verifyFirebaseToken(), validateRequest({ params: monthParamsSchema }), getMonthFinalization);
+router.get('/finalization/:month', verifyFirebaseToken(ROLE_POLICIES.monthFinalizationManagement), validateRequest({ params: monthParamsSchema }), getMonthFinalization);
 router.get('/user-finalization', verifyFirebaseToken(), validateRequest({ query: currentUserFinalizationQuerySchema }), getMyFinalizationData);
-router.get('/finalizations', verifyFirebaseToken(), getAllFinalizations);
+router.get('/finalizations', verifyFirebaseToken(ROLE_POLICIES.monthFinalizationManagement), getAllFinalizations);
 router.delete(
   '/finalization/:month',
   verifyFirebaseToken(ROLE_POLICIES.monthFinalizationManagement),

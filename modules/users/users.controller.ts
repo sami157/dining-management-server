@@ -7,6 +7,7 @@ const {
   updateFixedDepositByUserId,
   updateMosqueFeeByUserId,
   listUsers,
+  listAdmins,
   getRoleByEmail,
   checkUserExistsByEmail
 } = require('./users.service');
@@ -32,7 +33,7 @@ const updateUserProfile = asyncHandler(async (req: Request, res: Response) => {
 });
 
 const updateUserRole = asyncHandler(async (req: Request, res: Response) => {
-  const user = await updateUserRoleById(req.params.userId, req.body.role, req.user?.role);
+  const user = await updateUserRoleById(req.params.userId, req.body.role, req.user?._id, req.user?.role);
   return res.status(200).json({ message: 'User role updated successfully', user });
 });
 
@@ -48,6 +49,11 @@ const updateMosqueFee = asyncHandler(async (req: Request, res: Response) => {
 
 const getAllUsers = asyncHandler(async (req: Request, res: Response) => {
   const result = await listUsers(req.query);
+  return res.status(200).json(result);
+});
+
+const getAdmins = asyncHandler(async (_req: Request, res: Response) => {
+  const result = await listAdmins();
   return res.status(200).json(result);
 });
 
@@ -69,6 +75,7 @@ export {
   updateFixedDeposit,
   updateMosqueFee,
   getAllUsers,
+  getAdmins,
   getUserRole,
   checkUserWithEmail
 };

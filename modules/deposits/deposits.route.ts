@@ -20,7 +20,7 @@ import {
 const router = express.Router();
 
 router.post('/deposits/add', verifyFirebaseToken(ROLE_POLICIES.depositManagement), validateRequest({ body: addDepositBodySchema }), addDeposit);
-router.get('/deposits', verifyFirebaseToken(), validateRequest({ query: depositsQuerySchema }), getAllDeposits);
+router.get('/deposits', verifyFirebaseToken(ROLE_POLICIES.depositManagement), validateRequest({ query: depositsQuerySchema }), getAllDeposits);
 router.get('/user-deposit', verifyFirebaseToken(), validateRequest({ query: currentUserDepositQuerySchema }), getMonthlyDepositByUserId);
 router.put(
   '/deposits/:depositId',

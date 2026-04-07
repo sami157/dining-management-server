@@ -40,6 +40,6 @@ router.delete(
   validateRequest({ params: scheduleIdParamsSchema }),
   deleteSchedule
 );
-router.get('/registrations', validateRequest({ query: schedulesRangeQuerySchema }), getAllRegistrations);
+router.get('/registrations', verifyFirebaseToken(), validateRequest({ query: schedulesRangeQuerySchema }), getAllRegistrations);
 
 export = router;
