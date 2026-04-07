@@ -1,17 +1,5 @@
 # Improvement Tasks
 
-## High Priority
-
-## Medium Priority
-
-### API Design and Maintainability
-
-- Reduce repeated collection lookups.
-  - Some handlers call `getCollections()` multiple times inside one request; cache the result per handler execution where it simplifies the flow.
-
-- Consider module boundaries.
-  - Split large service files into smaller units by feature area, especially finance- and meal-related services.
-
 ### Post-Deploy Date Cleanup
 
 - Keep legacy `date`-based indexes until the new backend is deployed everywhere.
@@ -22,19 +10,6 @@
 
 - Later, narrow or remove the centralized compatibility fallback in `modules/shared/date.utils.ts`.
   - Only do this once legacy-field dependence is no longer needed for rollback or old deployments.
-
-## Lower Priority
-
-### Testing and Tooling
-
-- Add a real automated test setup.
-  - Cover auth middleware, meal registration deadlines, duplicate registration prevention, deposit updates, month finalization, and undo finalization.
-
-- Add linting and formatting.
-  - Introduce ESLint and a formatting standard so issues like dead code, mismatched role checks, and fragile imports are caught earlier.
-
-- Add a real `test` script.
-  - `dev`, `build`, `start`, and `typecheck` exist now, but `test` is still a placeholder.
 
 ## Completed
 

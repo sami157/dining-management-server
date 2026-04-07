@@ -1,3 +1,4 @@
+import type { Collection } from 'mongodb';
 import { DateTime } from 'luxon';
 const { getCollections } = require('../../config/connectMongodb');
 const { BUSINESS_TIMEZONE, serviceDateToBusinessDayStartUtc } = require('../shared/date.utils');
@@ -23,6 +24,8 @@ type MealDeadlineConfig = Record<MealDeadlineType, MealDeadlineRule> & {
   createdAt?: Date;
   key?: string;
 };
+
+type MealDeadlinesCollection = Collection<MealDeadlineConfig>;
 
 const cloneDefaultConfig = (): MealDeadlineConfig => JSON.parse(JSON.stringify(DEFAULT_MEAL_DEADLINES));
 
@@ -67,12 +70,12 @@ const validateMealDeadlineConfig = (config: unknown) => {
   return null;
 };
 
-const ensureMealDeadlineConfig = async (): Promise<MealDeadlineConfig> => {
-  const { mealDeadlines } = await getCollections();
+const ensureMealDeadlineConfig = async (mealDeadlines?: MealDeadlinesCollection): Promise<MealDeadlineConfig> => {
+  const collection = mealDeadlines ?? (await getCollections()).mealDeadlines as MealDeadlinesCollection;
   const now = new Date();
   const defaultConfig = cloneDefaultConfig();
 
-  await mealDeadlines.updateOne(
+  await collection.updateOne(
     { key: DEADLINE_CONFIG_KEY },
     {
       $setOnInsert: {
@@ -85,11 +88,11 @@ const ensureMealDeadlineConfig = async (): Promise<MealDeadlineConfig> => {
     { upsert: true }
   );
 
-  return mealDeadlines.findOne({ key: DEADLINE_CONFIG_KEY }) as Promise<MealDeadlineConfig>;
+  return collection.findOne({ key: DEADLINE_CONFIG_KEY }) as Promise<MealDeadlineConfig>;
 };
 
-const getMealDeadlineConfig = async () => {
-  const config = await ensureMealDeadlineConfig();
+const getMealDeadlineConfig = async (mealDeadlines?: MealDeadlinesCollection) => {
+  const config = await ensureMealDeadlineConfig(mealDeadlines);
 
   return {
     morning: config.morning,
@@ -125,7 +128,7 @@ const updateMealDeadlineConfig = async (config: MealDeadlineConfig, updatedBy: u
     { upsert: true }
   );
 
-  return getMealDeadlineConfig();
+  return getMealDeadlineConfig(mealDeadlines as MealDeadlinesCollection);
 };
 
 const calculateMealDeadline = (

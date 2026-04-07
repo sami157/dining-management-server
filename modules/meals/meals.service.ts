@@ -96,11 +96,11 @@ const getAvailableMealsForUser = async (userId: ObjectId, query: AvailableMealsQ
     end = endDate;
   }
 
-  const { mealSchedules, mealRegistrations } = await getCollections();
+  const { mealSchedules, mealRegistrations, mealDeadlines } = await getCollections();
   const [schedules, userRegistrations, mealDeadlineConfig] = await Promise.all([
     mealSchedules.find(buildCanonicalServiceDateRangeQuery(start, end)).sort({ serviceDate: 1 }).toArray() as Promise<ScheduleRecord[]>,
     mealRegistrations.find({ userId, ...buildCanonicalServiceDateRangeQuery(start, end) }).toArray() as Promise<RegistrationRecord[]>,
-    getMealDeadlineConfig()
+    getMealDeadlineConfig(mealDeadlines)
   ]);
 
   const registrationMap: Record<string, RegistrationRecord> = {};
@@ -157,8 +157,8 @@ const createMealRegistration = async (payload: MealRegistrationPayload, currentU
 
   const serviceDate = formatServiceDate(date);
   const mealDate = serviceDateToLegacyDate(serviceDate);
-  const { mealSchedules, mealRegistrations, users, systemLogs } = await getCollections();
-  const mealDeadlineConfig = await getMealDeadlineConfig();
+  const { mealSchedules, mealRegistrations, users, systemLogs, mealDeadlines } = await getCollections();
+  const mealDeadlineConfig = await getMealDeadlineConfig(mealDeadlines);
 
   const schedule = await mealSchedules.findOne(buildCanonicalServiceDateEqualityQuery(serviceDate)) as ScheduleRecord | null;
   if (!schedule) {
@@ -231,8 +231,8 @@ const editMealRegistration = async (registrationId: string, numberOfMeals: numbe
     throw createHttpError(400, 'numberOfMeals must be a positive number');
   }
 
-  const { mealRegistrations, mealSchedules } = await getCollections();
-  const mealDeadlineConfig = await getMealDeadlineConfig();
+  const { mealRegistrations, mealSchedules, mealDeadlines } = await getCollections();
+  const mealDeadlineConfig = await getMealDeadlineConfig(mealDeadlines);
   const registration = await mealRegistrations.findOne({ _id: new ObjectId(registrationId) }) as RegistrationRecord | null;
 
   if (!registration) {
@@ -272,8 +272,8 @@ const removeMealRegistration = async (registrationId: string, currentUser: UserR
     throw createHttpError(400, 'Invalid registration ID');
   }
 
-  const { users, mealRegistrations, mealSchedules, systemLogs } = await getCollections();
-  const mealDeadlineConfig = await getMealDeadlineConfig();
+  const { users, mealRegistrations, mealSchedules, systemLogs, mealDeadlines } = await getCollections();
+  const mealDeadlineConfig = await getMealDeadlineConfig(mealDeadlines);
   const registration = await mealRegistrations.findOne({ _id: new ObjectId(registrationId) }) as RegistrationRecord | null;
 
   if (!registration) {
@@ -395,11 +395,11 @@ const bulkRegisterMealsForUser = async (month: string, userId: ObjectId) => {
   const { startServiceDate, endServiceDate } = getMonthServiceDateRange(month);
 
   const currentTime = new Date();
-  const { mealSchedules, mealRegistrations } = await getCollections();
+  const { mealSchedules, mealRegistrations, mealDeadlines } = await getCollections();
   const [schedules, existingRegistrations, mealDeadlineConfig] = await Promise.all([
     mealSchedules.find(buildCanonicalServiceDateRangeQuery(startServiceDate, endServiceDate)).toArray() as Promise<ScheduleRecord[]>,
     mealRegistrations.find({ userId, ...buildCanonicalServiceDateRangeQuery(startServiceDate, endServiceDate) }).toArray() as Promise<RegistrationRecord[]>,
-    getMealDeadlineConfig()
+    getMealDeadlineConfig(mealDeadlines)
   ]);
 
   const registeredSet = new Set(
