@@ -1,7 +1,9 @@
 import { ObjectId } from 'mongodb';
+import { DateTime } from 'luxon';
 const { getCollections } = require('../../config/connectMongodb');
 const { createHttpError } = require('../finance/finance.utils');
 const {
+  BUSINESS_TIMEZONE,
   formatServiceDate,
   normalizeBusinessDateFields,
   serviceDateToLegacyDate
@@ -41,6 +43,8 @@ type UserSummary = {
   name?: string;
   email?: string;
   mealDefault?: boolean;
+  room?: string;
+  role?: string;
 };
 
 type RangePayload = {
@@ -53,11 +57,41 @@ type ScheduleUpdatePayload = {
   availableMeals?: MealOption[];
 };
 
+type MealSheetMealRegistration = {
+  registrationId: ObjectId | null;
+  isRegistered: boolean;
+  numberOfMeals: number;
+};
+
+type MealSheetUserRecord = {
+  userId: string;
+  name?: string;
+  email?: string;
+  room?: string;
+  role?: string;
+  mealDefault?: boolean;
+  registrations: Record<string, MealSheetMealRegistration>;
+};
+
+type NormalizedScheduleRecord = ScheduleRecord & {
+  serviceDate: string;
+};
+
+type MealSheetDayRecord = {
+  serviceDate: string;
+  schedule: NormalizedScheduleRecord | null;
+  users: MealSheetUserRecord[];
+};
+
 const buildCanonicalServiceDateRangeQuery = (startDate: string, endDate: string) => ({
   serviceDate: { $gte: startDate, $lte: endDate }
 });
 
 const buildCanonicalServiceDateEqualityQuery = (serviceDate: string) => ({ serviceDate });
+
+const getNextServiceDate = (serviceDate: string) => (
+  DateTime.fromISO(serviceDate, { zone: BUSINESS_TIMEZONE }).plus({ days: 1 }).toFormat('yyyy-LL-dd')
+);
 
 const getAvailableMealTypes = (availableMeals: MealOption[] = []) => (
   availableMeals.filter(meal => meal.isAvailable).map(meal => meal.mealType)
@@ -248,6 +282,100 @@ const listSchedules = async ({ startDate, endDate }: RangePayload) => {
   return { count: schedules.length, schedules: schedules.map((schedule) => normalizeBusinessDateFields(schedule)) };
 };
 
+const buildMealSheetDayRecord = (
+  serviceDate: string,
+  schedule: ScheduleRecord | null,
+  usersList: UserSummary[],
+  registrations: RegistrationRecord[]
+): MealSheetDayRecord => {
+  const normalizedSchedule = normalizeBusinessDateFields(schedule) as NormalizedScheduleRecord | null;
+  const mealTypes = (normalizedSchedule?.availableMeals || []).map((meal) => meal.mealType);
+  const registrationsByUserId = new Map<string, Record<string, MealSheetMealRegistration>>();
+
+  for (const registration of registrations) {
+    const userId = registration.userId.toString();
+    const userRegistrations = registrationsByUserId.get(userId) || {};
+    userRegistrations[registration.mealType] = {
+      registrationId: registration._id || null,
+      isRegistered: true,
+      numberOfMeals: registration.numberOfMeals || 1
+    };
+    registrationsByUserId.set(userId, userRegistrations);
+  }
+
+  const users = usersList.map((user) => {
+    const userId = user._id.toString();
+    const registrationMap = registrationsByUserId.get(userId) || {};
+    const registrationsByMealType: Record<string, MealSheetMealRegistration> = {};
+
+    for (const mealType of mealTypes) {
+      registrationsByMealType[mealType] = registrationMap[mealType] || {
+        registrationId: null,
+        isRegistered: false,
+        numberOfMeals: 0
+      };
+    }
+
+    return {
+      userId,
+      name: user.name,
+      email: user.email,
+      room: user.room,
+      role: user.role,
+      mealDefault: user.mealDefault,
+      registrations: registrationsByMealType
+    };
+  });
+
+  return {
+    serviceDate,
+    schedule: normalizedSchedule,
+    users
+  };
+};
+
+const getMealSheetForDate = async (date: string) => {
+  if (!date) {
+    throw createHttpError(400, 'date is required');
+  }
+
+  const firstDate = formatServiceDate(date);
+  const secondDate = getNextServiceDate(firstDate);
+  const targetDates = [firstDate, secondDate];
+  const { mealSchedules, mealRegistrations, users } = await getCollections();
+
+  const [schedules, registrations, usersList] = await Promise.all([
+    mealSchedules.find({ serviceDate: { $in: targetDates } }).toArray() as Promise<ScheduleRecord[]>,
+    mealRegistrations.find({ serviceDate: { $in: targetDates } }).toArray() as Promise<RegistrationRecord[]>,
+    users.find({}, {
+      projection: { _id: 1, name: 1, email: 1, mealDefault: 1, room: 1, role: 1 }
+    }).sort({ room: 1, name: 1 }).toArray() as Promise<UserSummary[]>
+  ]);
+
+  const scheduleByDate = new Map(schedules.map((schedule) => [schedule.serviceDate, schedule] as const));
+  const registrationsByDate = new Map<string, RegistrationRecord[]>();
+
+  for (const registration of registrations) {
+    const existingRegistrations = registrationsByDate.get(registration.serviceDate) || [];
+    existingRegistrations.push(registration);
+    registrationsByDate.set(registration.serviceDate, existingRegistrations);
+  }
+
+  const records = targetDates.map((serviceDate) => buildMealSheetDayRecord(
+    serviceDate,
+    scheduleByDate.get(serviceDate) || null,
+    usersList,
+    registrationsByDate.get(serviceDate) || []
+  ));
+
+  return {
+    date: firstDate,
+    nextDate: secondDate,
+    count: records.length,
+    records
+  };
+};
+
 const updateScheduleById = async (scheduleId: string, { isHoliday, availableMeals }: ScheduleUpdatePayload) => {
   if (!ObjectId.isValid(scheduleId)) {
     throw createHttpError(400, 'Invalid schedule ID');
@@ -384,6 +512,7 @@ const listRegistrationsForRange = async ({ startDate, endDate }: RangePayload) =
 export = {
   generateSchedulesForRange,
   listSchedules,
+  getMealSheetForDate,
   updateScheduleById,
   deleteScheduleById,
   listRegistrationsForRange

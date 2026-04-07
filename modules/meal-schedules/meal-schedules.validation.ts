@@ -23,6 +23,10 @@ const schedulesRangeQuerySchema = z.object({
   endDate: dateOnlySchema
 });
 
+const mealSheetQuerySchema = z.object({
+  date: dateOnlySchema
+});
+
 const scheduleIdParamsSchema = z.object({
   scheduleId: objectIdSchema
 });
@@ -37,6 +41,7 @@ const updateScheduleBodySchema = z.object({
 export {
   generateSchedulesBodySchema,
   schedulesRangeQuerySchema,
+  mealSheetQuerySchema,
   scheduleIdParamsSchema,
   updateScheduleBodySchema
 };

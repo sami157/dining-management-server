@@ -6,11 +6,13 @@ import {
   deleteSchedule,
   generateSchedules,
   getAllRegistrations,
+  getMealSheet,
   getSchedules,
   updateSchedule
 } from './meal-schedules.controller';
 import {
   generateSchedulesBodySchema,
+  mealSheetQuerySchema,
   scheduleIdParamsSchema,
   schedulesRangeQuerySchema,
   updateScheduleBodySchema
@@ -25,6 +27,7 @@ router.post(
   generateSchedules
 );
 router.get('/schedules', verifyFirebaseToken(), validateRequest({ query: schedulesRangeQuerySchema }), getSchedules);
+router.get('/meal-sheet', verifyFirebaseToken(), validateRequest({ query: mealSheetQuerySchema }), getMealSheet);
 router.put(
   '/schedules/:scheduleId',
   verifyFirebaseToken(ROLE_POLICIES.mealScheduleManagement),

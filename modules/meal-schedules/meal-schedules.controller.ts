@@ -2,6 +2,7 @@ import type { Request, Response } from 'express';
 const {
   generateSchedulesForRange,
   listSchedules,
+  getMealSheetForDate,
   updateScheduleById,
   deleteScheduleById,
   listRegistrationsForRange
@@ -19,6 +20,11 @@ const generateSchedules = asyncHandler(async (req: Request, res: Response) => {
 
 const getSchedules = asyncHandler(async (req: Request, res: Response) => {
   const result = await listSchedules(req.query);
+  return res.status(200).json(result);
+});
+
+const getMealSheet = asyncHandler(async (req: Request, res: Response) => {
+  const result = await getMealSheetForDate(req.query.date);
   return res.status(200).json(result);
 });
 
@@ -43,6 +49,7 @@ const getAllRegistrations = asyncHandler(async (req: Request, res: Response) => 
 export {
   generateSchedules,
   getSchedules,
+  getMealSheet,
   updateSchedule,
   deleteSchedule,
   getAllRegistrations
