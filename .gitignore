@@ -4,3 +4,4 @@ key.json
 .vercel
 .env*.local
 backups/
+dist/
