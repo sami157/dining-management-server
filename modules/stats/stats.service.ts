@@ -181,7 +181,7 @@ type TwoDaySheetSummaryRecord = {
   availableMeals: string[];
   totalRegisteredUsers: number;
   totalRegistrations: number;
-  mealTypes: Record<string, { registeredUsers: number; weightedMeals: number }>;
+  mealTypes: Record<string, { registeredUsers: number; totalMeals: number }>;
 };
 
 type AllTimeLeader = {
@@ -632,14 +632,14 @@ const getTwoDaySheetSummary = async ({ date }: TwoDaySheetSummaryQuery) => {
     const schedule = scheduleMap[serviceDate];
     const dailyRegistrations = registrationsByDate.get(serviceDate) || [];
     const uniqueUsers = new Set(dailyRegistrations.map((registration) => registration.userId?.toString()).filter(Boolean));
-    const mealTypes: Record<string, { registeredUsers: number; weightedMeals: number }> = {};
+    const mealTypes: Record<string, { registeredUsers: number; totalMeals: number }> = {};
 
     for (const mealType of MEAL_TYPES) {
       const matchingRegistrations = dailyRegistrations.filter((registration) => registration.mealType === mealType);
       mealTypes[mealType] = {
         registeredUsers: new Set(matchingRegistrations.map((registration) => registration.userId?.toString()).filter(Boolean)).size,
-        weightedMeals: Number(matchingRegistrations.reduce((sum, registration) => (
-          sum + getWeightedMealValue(registration, schedule)
+        totalMeals: Number(matchingRegistrations.reduce((sum, registration) => (
+          sum + (registration.numberOfMeals || 1)
         ), 0).toFixed(2))
       };
     }

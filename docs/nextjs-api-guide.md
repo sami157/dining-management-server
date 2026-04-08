@@ -1630,7 +1630,7 @@ Response:
       MealType,
       {
         registeredUsers: number
-        weightedMeals: number
+        totalMeals: number
       }
     >
   }>

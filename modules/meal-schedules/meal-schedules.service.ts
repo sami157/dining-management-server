@@ -4,6 +4,8 @@ const { getCollections } = require('../../config/connectMongodb');
 const { createHttpError } = require('../finance/finance.utils');
 const {
   BUSINESS_TIMEZONE,
+  buildServiceDateEqualityQuery,
+  buildServiceDateRangeQuery,
   formatServiceDate,
   normalizeBusinessDateFields,
   serviceDateToLegacyDate
@@ -31,8 +33,8 @@ type ScheduleRecord = {
 type RegistrationRecord = {
   _id?: ObjectId;
   userId: ObjectId | string;
-  date: Date;
-  serviceDate: string;
+  date?: Date;
+  serviceDate?: string;
   mealType: string;
   numberOfMeals: number;
   registeredAt: Date;
@@ -89,6 +91,14 @@ const buildCanonicalServiceDateRangeQuery = (startDate: string, endDate: string)
 
 const buildCanonicalServiceDateEqualityQuery = (serviceDate: string) => ({ serviceDate });
 
+const buildRegistrationServiceDateRangeQuery = (startDate: string, endDate: string) => (
+  buildServiceDateRangeQuery('date', startDate, endDate)
+);
+
+const buildRegistrationServiceDateEqualityQuery = (serviceDate: string) => (
+  buildServiceDateEqualityQuery('date', serviceDate)
+);
+
 const getNextServiceDate = (serviceDate: string) => (
   DateTime.fromISO(serviceDate, { zone: BUSINESS_TIMEZONE }).plus({ days: 1 }).toFormat('yyyy-LL-dd')
 );
@@ -125,14 +135,19 @@ const buildDefaultUserRegistrations = async (
   }
 
   const existingRegistrations = (await mealRegistrations.find({
-    serviceDate: { $in: serviceDates },
-    mealType: { $in: relevantMealTypes }
+    $and: [
+      buildRegistrationServiceDateRangeQuery(serviceDates[0], serviceDates[serviceDates.length - 1]),
+      { mealType: { $in: relevantMealTypes } }
+    ]
   }, {
-    projection: { userId: 1, serviceDate: 1, mealType: 1 }
-  }).toArray()) as Array<Pick<RegistrationRecord, 'userId' | 'serviceDate' | 'mealType'>>;
+    projection: { userId: 1, date: 1, serviceDate: 1, mealType: 1 }
+  }).toArray()) as Array<Pick<RegistrationRecord, 'userId' | 'date' | 'serviceDate' | 'mealType'>>;
 
   const existingKeys = new Set(
-    existingRegistrations.map(registration => `${registration.userId.toString()}|${registration.serviceDate}|${registration.mealType}`)
+    existingRegistrations.map((registration) => {
+      const normalizedRegistration = normalizeBusinessDateFields(registration) as RegistrationRecord;
+      return `${registration.userId.toString()}|${normalizedRegistration.serviceDate}|${registration.mealType}`;
+    })
   );
 
   const registrations: RegistrationRecord[] = [];
@@ -346,7 +361,7 @@ const getMealSheetForDate = async (date: string) => {
 
   const [schedules, registrations, usersList] = await Promise.all([
     mealSchedules.find({ serviceDate: { $in: targetDates } }).toArray() as Promise<ScheduleRecord[]>,
-    mealRegistrations.find({ serviceDate: { $in: targetDates } }).toArray() as Promise<RegistrationRecord[]>,
+    mealRegistrations.find(buildRegistrationServiceDateRangeQuery(firstDate, secondDate)).toArray() as Promise<RegistrationRecord[]>,
     users.find({}, {
       projection: { _id: 1, name: 1, email: 1, mealDefault: 1, room: 1, role: 1 }
     }).sort({ room: 1, name: 1 }).toArray() as Promise<UserSummary[]>
@@ -356,9 +371,15 @@ const getMealSheetForDate = async (date: string) => {
   const registrationsByDate = new Map<string, RegistrationRecord[]>();
 
   for (const registration of registrations) {
-    const existingRegistrations = registrationsByDate.get(registration.serviceDate) || [];
-    existingRegistrations.push(registration);
-    registrationsByDate.set(registration.serviceDate, existingRegistrations);
+    const normalizedRegistration = normalizeBusinessDateFields(registration) as RegistrationRecord;
+    const registrationServiceDate = normalizedRegistration.serviceDate;
+    if (!registrationServiceDate || !targetDates.includes(registrationServiceDate)) {
+      continue;
+    }
+
+    const existingRegistrations = registrationsByDate.get(registrationServiceDate) || [];
+    existingRegistrations.push(normalizedRegistration);
+    registrationsByDate.set(registrationServiceDate, existingRegistrations);
   }
 
   const records = targetDates.map((serviceDate) => buildMealSheetDayRecord(
@@ -427,7 +448,7 @@ const updateScheduleById = async (scheduleId: string, { isHoliday, availableMeal
 
   if (unavailableMealTypes.length > 0) {
     await mealRegistrations.deleteMany({
-      ...buildCanonicalServiceDateEqualityQuery(schedule.serviceDate),
+      ...buildRegistrationServiceDateEqualityQuery(schedule.serviceDate),
       mealType: { $in: unavailableMealTypes }
     });
   }
@@ -461,7 +482,7 @@ const deleteScheduleById = async (scheduleId: string) => {
   }
 
   const { deletedCount } = await mealRegistrations.deleteMany(
-    buildCanonicalServiceDateEqualityQuery(schedule.serviceDate)
+    buildRegistrationServiceDateEqualityQuery(schedule.serviceDate)
   );
   return { registrationsCleared: deletedCount };
 };
@@ -480,7 +501,7 @@ const listRegistrationsForRange = async ({ startDate, endDate }: RangePayload) =
 
   const { mealRegistrations, users } = await getCollections();
   const registrations = await mealRegistrations.find(
-    buildCanonicalServiceDateRangeQuery(startDate, endDate)
+    buildRegistrationServiceDateRangeQuery(startDate, endDate)
   ).sort({ serviceDate: 1, userId: 1, mealType: 1 }).toArray() as RegistrationRecord[];
 
   const userIds = [...new Set(registrations.map(registration => registration.userId))];
@@ -496,10 +517,13 @@ const listRegistrationsForRange = async ({ startDate, endDate }: RangePayload) =
     });
   }
 
-  const enrichedRegistrations = registrations.map(registration => ({
-    ...normalizeBusinessDateFields(registration),
-    user: usersMap[registration.userId.toString()] || null
-  }));
+  const enrichedRegistrations = registrations.map((registration) => {
+    const normalizedRegistration = normalizeBusinessDateFields(registration) as RegistrationRecord;
+    return {
+      ...normalizedRegistration,
+      user: usersMap[registration.userId.toString()] || null
+    };
+  });
 
   return {
     count: enrichedRegistrations.length,
