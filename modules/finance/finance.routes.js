@@ -6,7 +6,6 @@ const {
   addExpense, 
   getAllBalances, 
   getUserBalance,
-  getRunningMealRate,
   finalizeMonth,
   getMonthFinalization,
   getAllFinalizations,
@@ -23,31 +22,28 @@ const {
 } = require('./finance.controller');
 
 // Deposits
-router.post('/deposits/add', verifyFirebaseToken(true), addDeposit);
+router.post('/deposits/add', verifyFirebaseToken('admin,super_admin'), addDeposit);
 router.get('/deposits', verifyFirebaseToken(), getAllDeposits);
 router.get('/user-deposit', verifyFirebaseToken(), getMonthlyDepositByUserId);
-router.put('/deposits/:depositId', verifyFirebaseToken(true), updateDeposit);
-router.delete('/deposits/:depositId', verifyFirebaseToken(true), deleteDeposit);
+router.put('/deposits/:depositId', verifyFirebaseToken('admin,super_admin'), updateDeposit);
+router.delete('/deposits/:depositId', verifyFirebaseToken('admin,super_admin'), deleteDeposit);
 
 // Expenses
-router.post('/expenses/add', verifyFirebaseToken(true), addExpense);
+router.post('/expenses/add', verifyFirebaseToken('admin,super_admin'), addExpense);
 router.get('/expenses', verifyFirebaseToken(), getAllExpenses);
-router.put('/expenses/:expenseId', verifyFirebaseToken(true), updateExpense);
-router.delete('/expenses/:expenseId', verifyFirebaseToken(true), deleteExpense);
+router.put('/expenses/:expenseId', verifyFirebaseToken('admin,super_admin'), updateExpense);
+router.delete('/expenses/:expenseId', verifyFirebaseToken('admin,super_admin'), deleteExpense);
 
 // Balances
 router.get('/balances', getAllBalances);
 router.get('/balances/:userId', getUserBalance);
 router.get('/my-balance', verifyFirebaseToken(), getMyBalance);
 
-//Running Meal Rate
-router.get('/meal-rate', verifyFirebaseToken(), getRunningMealRate);
-
 // Finalization
-router.post('/finalize', verifyFirebaseToken(true), finalizeMonth);
+router.post('/finalize', verifyFirebaseToken('admin,super_admin'), finalizeMonth);
 router.get('/finalization/:month', verifyFirebaseToken(), getMonthFinalization);
 router.get('/user-finalization', verifyFirebaseToken(), getMyFinalizationData);
 router.get('/finalizations', verifyFirebaseToken(), getAllFinalizations);
-router.delete('/finalization/:month', verifyFirebaseToken(true), undoMonthFinalization);
+router.delete('/finalization/:month', verifyFirebaseToken('admin,super_admin'), undoMonthFinalization);
 
 module.exports = router;

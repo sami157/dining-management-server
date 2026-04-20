@@ -1,16 +1,18 @@
 const express = require('express');
 const verifyFirebaseToken = require('../../middleware/verifyFirebaseToken')
 const { getAvailableMeals, getTotalMealsForUser, cancelMealRegistration, registerMeal, updateMealRegistration, bulkToggleMealsForUser } = require('./users.controller');
-const { createUser, getUserProfile, updateUserProfile, updateUserRole, getAllUsers, getUserRole, updateFixedDeposit, updateMosqueFee, checkUserWithEmail } = require('./users.management.controller');
+const { createUser, getUserProfile, updateUserProfile, updateUserRole, getAllUsers, getUserRole, updateFixedDeposit, updateMosqueFee, deactivateUser, reactivateUser, checkUserWithEmail } = require('./users.management.controller');
 const router = express.Router();
 
 // User management
 router.post('/create', createUser);
 router.get('/profile', verifyFirebaseToken(), getUserProfile);
 router.put('/profile', verifyFirebaseToken(), updateUserProfile);
-router.put('/role/:userId', verifyFirebaseToken(), updateUserRole); //admin only access
-router.put('/fixedDeposit/:userId', verifyFirebaseToken(), updateFixedDeposit); //admin only access
-router.put('/mosqueFee/:userId', verifyFirebaseToken(), updateMosqueFee); //admin only access
+router.put('/role/:userId', verifyFirebaseToken('admin,manager'), updateUserRole);
+router.put('/fixedDeposit/:userId', verifyFirebaseToken('admin,super_admin'), updateFixedDeposit);
+router.put('/mosqueFee/:userId', verifyFirebaseToken('admin,super_admin'), updateMosqueFee);
+router.patch('/deactivate/:userId', verifyFirebaseToken('admin,super_admin'), deactivateUser);
+router.patch('/reactivate/:userId', verifyFirebaseToken('admin,super_admin'), reactivateUser);
 router.get('/', getAllUsers); //admin or manager can access
 router.get('/get-role/:email', getUserRole);
 router.get('/check-user/:email', checkUserWithEmail)

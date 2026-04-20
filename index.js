@@ -5,6 +5,7 @@ const { connectMongoDB } = require('./config/connectMongodb');
 const managersRouter = require('./modules/managers/managers.route');
 const usersRouter = require('./modules/users/users.route');
 const financeRouter = require('./modules/finance/finance.routes');
+const statsRouter = require('./modules/stats/stats.route');
 
 const app = express()
 const port = process.env.PORT || 5000
@@ -15,6 +16,7 @@ app.use(express.json());
 app.use('/managers', managersRouter);
 app.use('/users', usersRouter);
 app.use('/finance', financeRouter);
+app.use('/stats', statsRouter);
 
 app.get('/', (req, res) => {
   res.send('Welcome to dining management server')
