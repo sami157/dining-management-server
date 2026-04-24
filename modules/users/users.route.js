@@ -8,7 +8,7 @@ const router = express.Router();
 router.post('/create', createUser);
 router.get('/profile', verifyFirebaseToken(), getUserProfile);
 router.put('/profile', verifyFirebaseToken(), updateUserProfile);
-router.put('/role/:userId', verifyFirebaseToken('admin,manager'), updateUserRole);
+router.put('/role/:userId', verifyFirebaseToken('admin,manager,super_admin'), updateUserRole);
 router.put('/fixedDeposit/:userId', verifyFirebaseToken('admin,super_admin'), updateFixedDeposit);
 router.put('/mosqueFee/:userId', verifyFirebaseToken('admin,super_admin'), updateMosqueFee);
 router.patch('/deactivate/:userId', verifyFirebaseToken('admin,super_admin'), deactivateUser);

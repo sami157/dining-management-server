@@ -31,6 +31,7 @@ const escapeRegex = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
 const findUserByEmail = (users, email) => users.findOne({
   email: new RegExp(`^${escapeRegex(email)}$`, 'i'),
+  isActive: { $ne: false },
 });
 
 const isValidEmail = (email) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
@@ -71,7 +72,7 @@ const createRecoveryCode = async (req, res) => {
     const { users, passwordRecoveryCodes, systemLogs } = await getCollections();
     await ensureRecoveryIndexes(passwordRecoveryCodes);
 
-    const targetUser = await users.findOne({ _id: new ObjectId(userId) });
+    const targetUser = await users.findOne({ _id: new ObjectId(userId), isActive: { $ne: false } });
     if (!targetUser?.email) {
       return res.status(404).json({ message: 'User not found' });
     }
