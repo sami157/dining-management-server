@@ -1,7 +1,28 @@
 const admin = require("../config/firebaseAdmin");
 const { getCollections } = require("../config/connectMongodb");
 
-const verifyFirebaseToken = (isProteted = false) => {
+const parseRoles = (roles) => {
+    if (!roles) {
+        return [];
+    }
+
+    if (roles === true) {
+        return ["admin", "super_admin"];
+    }
+
+    if (Array.isArray(roles)) {
+        return roles.map((role) => role.trim()).filter(Boolean);
+    }
+
+    return String(roles)
+        .split(",")
+        .map((role) => role.trim())
+        .filter(Boolean);
+};
+
+const verifyFirebaseToken = (roles = "") => {
+    const allowedRoles = parseRoles(roles);
+
     return async (req, res, next) => {
         try {
             const authHeader = req.headers.authorization;
@@ -14,15 +35,15 @@ const verifyFirebaseToken = (isProteted = false) => {
 
             const decoded = await admin.auth().verifyIdToken(idToken);
             const { users } = await getCollections();
-            const user = await users.findOne({ email: decoded.email });
+            const user = await users.findOne({ email: decoded.email, isActive: { $ne: false } });
 
             if (!user) {
                 res.status(403).json({ message: "Unauthorized" });
                 return;
             }
 
-            if (isProteted && (user.role!=='admin' && user.role !== 'super_admin')){
-                res.status(403).json({ message: "Only Admins can access this content" });
+            if (allowedRoles.length > 0 && !allowedRoles.includes(user.role)) {
+                res.status(403).json({ message: "You are not authorized to access this content" });
                 return;
             }
 

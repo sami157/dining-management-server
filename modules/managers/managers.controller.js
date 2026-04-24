@@ -66,7 +66,7 @@ const generateSchedules = async (req, res) => {
         { projection: { date: 1 } }
       ).toArray(),
       users.find(
-        { mealDefault: true },
+        { mealDefault: true, isActive: { $ne: false } },
         { projection: { _id: 1 } }
       ).toArray()
     ]);

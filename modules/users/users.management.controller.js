@@ -23,6 +23,7 @@ const createUser = async (req, res) => {
       designation: designation || '',
       department: department || '',
       role: 'member',
+      isActive: true,
       fixedDeposit: 0,
       mosqueFee: 0,
       createdAt: new Date(),
@@ -198,13 +199,82 @@ const updateMosqueFee = async (req, res) => {
   }
 };
 
+const deactivateUser = async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const currentUser = req.user;
+
+    if (!ObjectId.isValid(userId)) {
+      return res.status(400).json({ error: 'Invalid user ID' });
+    }
+
+    if (!currentUser || (currentUser.role !== 'admin' && currentUser.role !== 'super_admin')) {
+      return res.status(403).json({ error: 'You are not authorized' });
+    }
+
+    if (currentUser._id.toString() === userId) {
+      return res.status(400).json({ error: 'You cannot deactivate your own account' });
+    }
+
+    const { users } = await getCollections();
+    const result = await users.findOneAndUpdate(
+      { _id: new ObjectId(userId), isActive: { $ne: false } },
+      { $set: { isActive: false, updatedAt: new Date() } },
+      { returnDocument: 'after' }
+    );
+
+    if (!result) {
+      return res.status(404).json({ error: 'Active user not found' });
+    }
+
+    return res.status(200).json({ message: 'User deactivated successfully', user: result });
+
+  } catch (error) {
+    console.error('Error deactivating user:', error);
+    return res.status(500).json({ error: 'Failed to deactivate user' });
+  }
+};
+
+const reactivateUser = async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const currentUserRole = req.user?.role;
+
+    if (!ObjectId.isValid(userId)) {
+      return res.status(400).json({ error: 'Invalid user ID' });
+    }
+
+    if (currentUserRole !== 'admin' && currentUserRole !== 'super_admin') {
+      return res.status(403).json({ error: 'You are not authorized' });
+    }
+
+    const { users } = await getCollections();
+    const result = await users.findOneAndUpdate(
+      { _id: new ObjectId(userId), isActive: false },
+      { $set: { isActive: true, updatedAt: new Date() } },
+      { returnDocument: 'after' }
+    );
+
+    if (!result) {
+      return res.status(404).json({ error: 'Inactive user not found' });
+    }
+
+    return res.status(200).json({ message: 'User reactivated successfully', user: result });
+
+  } catch (error) {
+    console.error('Error reactivating user:', error);
+    return res.status(500).json({ error: 'Failed to reactivate user' });
+  }
+};
+
 const getAllUsers = async (req, res) => {
   try {
-    const { role, department } = req.query;
+    const { role, department, includeInactive } = req.query;
     const query = {};
 
     if (role && VALID_ROLES.includes(role)) query.role = role;
     if (department) query.department = department;
+    if (includeInactive !== 'true') query.isActive = { $ne: false };
 
     const { users } = await getCollections();
     const allUsers = await users.find(query).sort({ room: 1 }).toArray();
@@ -230,7 +300,7 @@ const getUserRole = async (req, res) => {
     }
 
     const { users } = await getCollections();
-    const user = await users.findOne({ email });
+    const user = await users.findOne({ email, isActive: { $ne: false } });
 
     if (!user) {
       return res.status(404).json({ message: 'User not found' });
@@ -251,7 +321,7 @@ const checkUserWithEmail = async (req, res) => {
   }
 
   const { users } = await getCollections();
-  const user = await users.findOne({ email });
+  const user = await users.findOne({ email, isActive: { $ne: false } });
   if (!user) {
     return res.status(200).json({ doesExist: false });
   }
@@ -265,6 +335,8 @@ module.exports = {
   updateUserRole,
   updateFixedDeposit,
   updateMosqueFee,
+  deactivateUser,
+  reactivateUser,
   getAllUsers,
   getUserRole,
   checkUserWithEmail
