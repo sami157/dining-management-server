@@ -101,8 +101,8 @@ const updateUserRole = async (req, res) => {
     const { role } = req.body;
     const currentUserRole = req.user?.role;
 
-    if (!['admin', 'manager'].includes(currentUserRole)) {
-      return res.status(403).json({ error: 'Only admins and managers can update user roles' });
+    if (!['admin', 'manager', 'super_admin'].includes(currentUserRole)) {
+      return res.status(403).json({ error: 'Only admins, managers, and super admins can update user roles' });
     }
 
     if (!ObjectId.isValid(userId)) {

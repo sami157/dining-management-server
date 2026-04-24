@@ -219,7 +219,7 @@ const updateMealRegistration = async (req, res) => {
       return res.status(403).json({ error: 'You can only update your own registration' });
     }
 
-    if (req.user.role !== 'admin') {
+    if (req.user.role !== 'admin' && req.user.role !== 'super_admin') {
       const schedule = await mealSchedules.findOne({ date: registration.date });
       if (!schedule) {
         return res.status(404).json({ error: 'Meal schedule not found for this date' });
