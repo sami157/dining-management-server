@@ -351,10 +351,13 @@ const finalizeMonth = async (req, res) => {
       ? parseFloat((totalExpenses / totalMealsServed).toFixed(2))
       : 0;
     const totalDeposits = Object.values(depositsByUser).reduce((sum, amt) => sum + amt, 0);
+    const totalFixedDeposit = allUsers.reduce((sum, user) => sum + (Number(user.fixedDeposit) || 0), 0);
 
     const memberDetails = [];
     const balanceUpdates = [];
     const now = new Date();
+    let totalMosqueFee = 0;
+    let totalMemberBalancesAfterFinalization = 0;
 
     for (const user of allUsers) {
       const userId = user._id.toString();
@@ -362,8 +365,10 @@ const finalizeMonth = async (req, res) => {
       const totalUserDeposits = depositsByUser[userId] || 0;
       const mealCost = totalMeals * mealRate;
       const previousBalance = balanceByUser[userId] || 0;
-      const mosqueFee = user.mosqueFee || 0;
+      const mosqueFee = Number(user.mosqueFee) || 0;
       const newBalance = previousBalance - mealCost - mosqueFee;
+      totalMosqueFee += mosqueFee;
+      totalMemberBalancesAfterFinalization += newBalance;
 
       let status = 'paid';
       if (newBalance < 0) status = 'due';
@@ -387,6 +392,7 @@ const finalizeMonth = async (req, res) => {
     const finalizationRecord = {
       month, finalizedAt: now, finalizedBy: managerId,
       totalMembers: allUsers.length, totalMealsServed, totalDeposits,
+      totalFixedDeposit, totalMosqueFee, totalMemberBalancesAfterFinalization,
       totalExpenses, mealRate, memberDetails,
       expenseBreakdown: expenseBreakdownArray, isFinalized: true, notes: ''
     };
@@ -398,7 +404,8 @@ const finalizeMonth = async (req, res) => {
       finalizationId: result.insertedId,
       summary: {
         month, totalMembers: allUsers.length, totalMealsServed,
-        totalDeposits, totalExpenses, mealRate: parseFloat(mealRate.toFixed(2))
+        totalDeposits, totalFixedDeposit, totalMosqueFee,
+        totalMemberBalancesAfterFinalization, totalExpenses, mealRate: parseFloat(mealRate.toFixed(2))
       }
     });
 
