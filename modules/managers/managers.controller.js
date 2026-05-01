@@ -100,6 +100,8 @@ const generateSchedules = async (req, res) => {
 
     const result = await mealSchedules.insertMany(schedulesToCreate);
 
+    let registrationsCreated = 0;
+
     // Auto-register default users for each new schedule
     if (defaultUsers.length > 0) {
       const registrations = [];
@@ -123,14 +125,15 @@ const generateSchedules = async (req, res) => {
       }
 
       if (registrations.length > 0) {
-        await mealRegistrations.insertMany(registrations);
+        const registrationResult = await mealRegistrations.insertMany(registrations);
+        registrationsCreated = registrationResult.insertedCount;
       }
     }
 
     return res.status(201).json({
       message: `${result.insertedCount} schedules created successfully`,
       count: result.insertedCount,
-      registrationsCreated: defaultUsers.length * schedulesToCreate.length
+      registrationsCreated
     });
 
   } catch (error) {
