@@ -96,6 +96,37 @@ const updateUserProfile = async (req, res) => {
   }
 };
 
+const updateMealDefault = async (req, res) => {
+  try {
+    const userId = req.user?._id;
+    const { mealDefault } = req.body;
+
+    if (typeof mealDefault !== 'boolean') {
+      return res.status(400).json({ error: 'mealDefault must be a boolean' });
+    }
+
+    const { users } = await getCollections();
+    const result = await users.findOneAndUpdate(
+      { _id: userId },
+      { $set: { mealDefault, updatedAt: new Date() } },
+      { returnDocument: 'after' }
+    );
+
+    if (!result) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    return res.status(200).json({
+      message: 'Meal default updated successfully',
+      user: result
+    });
+
+  } catch (error) {
+    console.error('Error updating meal default:', error);
+    return res.status(500).json({ error: 'Failed to update meal default' });
+  }
+};
+
 const updateUserRole = async (req, res) => {
   try {
     const { userId } = req.params;
@@ -332,6 +363,7 @@ module.exports = {
   createUser,
   getUserProfile,
   updateUserProfile,
+  updateMealDefault,
   updateUserRole,
   updateFixedDeposit,
   updateMosqueFee,

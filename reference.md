@@ -30,6 +30,7 @@ Date formats used by the API:
 | `POST` | `/users/create` | No | Create a dining user profile. |
 | `GET` | `/users/profile` | Any authenticated user | Get the current user's profile from the Firebase token email. |
 | `PUT` | `/users/profile` | Any authenticated user | Update the current user's profile. |
+| `PATCH` | `/users/meal-default` | Any authenticated user | Update the current user's automatic meal registration preference. |
 | `PUT` | `/users/role/:userId` | `admin`, `manager`, `super_admin` | Update a user's role. |
 | `PUT` | `/users/fixedDeposit/:userId` | `admin`, `super_admin` | Update a user's fixed deposit amount. |
 | `PUT` | `/users/mosqueFee/:userId` | `admin`, `super_admin` | Update a user's mosque fee. |
@@ -70,6 +71,16 @@ Required: `name`, `mobile`, `email`.
   "department": "CSE"
 }
 ```
+
+`PATCH /users/meal-default`
+
+```json
+{
+  "mealDefault": true
+}
+```
+
+`mealDefault` must be a boolean. When enabled, the user is included in automatic registrations when new schedules are generated.
 
 `PUT /users/role/:userId`
 
@@ -173,7 +184,7 @@ Example: `/users/meals/total/member@example.com?month=2026-04`
 | --- | --- | --- | --- |
 | `POST` | `/managers/schedules/generate` | `admin`, `super_admin` | Generate meal schedules for a date range. |
 | `GET` | `/managers/schedules` | Any authenticated user | Get meal schedules for a date range. |
-| `PUT` | `/managers/schedules/:scheduleId` | `admin`, `super_admin` | Update a schedule. |
+| `PUT` | `/managers/schedules/:scheduleId` | `admin`, `super_admin` | Update a schedule. Newly available meal types auto-register users with `mealDefault: true`. |
 | `DELETE` | `/managers/schedules/:scheduleId` | `admin`, `super_admin` | Delete a schedule and its registrations. |
 | `GET` | `/managers/registrations` | No token enforced by route | Get all meal registrations for a date range. |
 
@@ -224,6 +235,18 @@ Example: `/managers/schedules?startDate=2026-04-01&endDate=2026-04-30`
       "menu": "Rice, dal, fish"
     }
   ]
+}
+```
+
+When a meal type is changed from unavailable/missing to available, the backend automatically registers all active users with `mealDefault: true` for that schedule date and meal type. Existing registrations are not duplicated.
+
+Success response includes `registrationsCreated`:
+
+```json
+{
+  "message": "Schedule and registrations updated successfully",
+  "schedule": {},
+  "registrationsCreated": 3
 }
 ```
 

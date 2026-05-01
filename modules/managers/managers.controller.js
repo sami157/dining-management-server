@@ -184,22 +184,36 @@ const updateSchedule = async (req, res) => {
     }
 
     const updateData = { updatedAt: new Date() };
+    let normalizedAvailableMeals;
 
     if (isHoliday !== undefined) {
       updateData.isHoliday = isHoliday;
     }
 
     if (availableMeals) {
-      updateData.availableMeals = availableMeals.map(meal => ({
+      normalizedAvailableMeals = availableMeals.map(meal => ({
         mealType: meal.mealType,
         isAvailable: meal.isAvailable,
         customDeadline: meal.customDeadline || null,
         weight: meal.isAvailable ? (meal.weight !== undefined ? meal.weight : 1) : 0,
         menu: meal.menu || ''
       }));
+      updateData.availableMeals = normalizedAvailableMeals;
     }
 
-    const { mealSchedules } = await getCollections();
+    const { mealSchedules, mealRegistrations, users } = await getCollections();
+    const existingSchedule = await mealSchedules.findOne({ _id: new ObjectId(scheduleId) });
+
+    if (!existingSchedule) {
+      return res.status(404).json({ error: 'Schedule not found' });
+    }
+
+    const previousAvailableMealTypes = new Set(
+      (existingSchedule.availableMeals || [])
+        .filter(meal => meal.isAvailable)
+        .map(meal => meal.mealType)
+    );
+
     const result = await mealSchedules.findOneAndUpdate(
       { _id: new ObjectId(scheduleId) },
       { $set: updateData },
@@ -215,14 +229,67 @@ const updateSchedule = async (req, res) => {
       .map(meal => meal.mealType);
 
     if (unavailableMealTypes.length > 0) {
-      const { mealRegistrations } = await getCollections();
       await mealRegistrations.deleteMany({
         date: result.date,
         mealType: { $in: unavailableMealTypes }
       });
     }
 
-    return res.status(200).json({ message: 'Schedule and registrations updated successfully', schedule: result });
+    const newlyAvailableMealTypes = normalizedAvailableMeals
+      ? normalizedAvailableMeals
+        .filter(meal => meal.isAvailable && !previousAvailableMealTypes.has(meal.mealType))
+        .map(meal => meal.mealType)
+      : [];
+
+    let registrationsCreated = 0;
+
+    if (newlyAvailableMealTypes.length > 0) {
+      const [defaultUsers, existingRegistrations] = await Promise.all([
+        users.find(
+          { mealDefault: true, isActive: { $ne: false } },
+          { projection: { _id: 1 } }
+        ).toArray(),
+        mealRegistrations.find({
+          date: result.date,
+          mealType: { $in: newlyAvailableMealTypes }
+        }).toArray()
+      ]);
+
+      const existingRegistrationKeys = new Set(
+        existingRegistrations.map(registration => `${registration.userId?.toString()}_${registration.mealType}`)
+      );
+
+      const registrationsToCreate = [];
+
+      for (const user of defaultUsers) {
+        const userId = user._id.toString();
+
+        for (const mealType of newlyAvailableMealTypes) {
+          const key = `${userId}_${mealType}`;
+
+          if (!existingRegistrationKeys.has(key)) {
+            registrationsToCreate.push({
+              userId: user._id,
+              date: result.date,
+              mealType,
+              numberOfMeals: 1,
+              registeredAt: new Date()
+            });
+          }
+        }
+      }
+
+      if (registrationsToCreate.length > 0) {
+        const registrationResult = await mealRegistrations.insertMany(registrationsToCreate);
+        registrationsCreated = registrationResult.insertedCount;
+      }
+    }
+
+    return res.status(200).json({
+      message: 'Schedule and registrations updated successfully',
+      schedule: result,
+      registrationsCreated
+    });
 
   } catch (error) {
     console.error('Error updating schedule:', error);
