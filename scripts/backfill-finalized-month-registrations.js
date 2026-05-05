@@ -21,33 +21,103 @@ const apply = args.has('--apply');
 const toDay = date => date.toISOString().slice(0, 10);
 const roundHalfUnits = value => Math.round(value * 2);
 
-const findCombination = (targetHalfUnits, slots) => {
-  const maxCount = Math.ceil(targetHalfUnits / Math.min(...slots.map(slot => slot.weightHalfUnits))) + 5;
+const dateDistribution = {
+  '2026-04-26': 0.28,
+  '2026-04-27': 0.28,
+  '2026-04-28': 0.26,
+  '2026-04-29': 0.09,
+  '2026-04-30': 0.09,
+};
+
+const mealCountDistribution = {
+  1: 0.7,
+  2: 0.25,
+  3: 0.05,
+};
+
+const findCombination = (targetHalfUnits, slots, runningDateHalfUnits, projectedTotalHalfUnits) => {
+  const maxMealsPerRegistration = 3;
   const result = [];
+  let best = null;
+  let bestScore = Infinity;
 
-  const search = (index, remaining) => {
-    if (remaining === 0) return true;
-    if (index >= slots.length) return false;
+  const scoreCombination = combination => {
+    const projectedByDate = new Map(runningDateHalfUnits);
 
-    const slot = slots[index];
-    const maxForSlot = Math.min(maxCount, Math.floor(remaining / slot.weightHalfUnits));
+    for (const slot of combination) {
+      const dateKey = toDay(slot.date);
+      projectedByDate.set(
+        dateKey,
+        (projectedByDate.get(dateKey) || 0) + slot.numberOfMeals * slot.weightHalfUnits
+      );
+    }
 
-    for (let count = maxForSlot; count >= 0; count -= 1) {
-      result[index] = count;
-      if (search(index + 1, remaining - count * slot.weightHalfUnits)) {
-        return true;
+    let score = 0;
+
+    for (const slot of slots) {
+      const dateKey = toDay(slot.date);
+      const targetShare = dateDistribution[dateKey] || (1 / slots.length);
+      const expected = projectedTotalHalfUnits * targetShare;
+      const actual = projectedByDate.get(dateKey) || 0;
+      score += Math.abs(actual - expected);
+    }
+
+    // Keep later dates present, but comparatively lighter than the earlier dates.
+    for (const slot of combination) {
+      const dateKey = toDay(slot.date);
+      if (dateKey === '2026-04-29' || dateKey === '2026-04-30') {
+        score += slot.numberOfMeals * slot.weightHalfUnits * 0.2;
       }
     }
 
-    result[index] = 0;
-    return false;
+    const combinationCounts = combination.reduce((counts, slot) => {
+      counts[slot.numberOfMeals] = (counts[slot.numberOfMeals] || 0) + 1;
+      return counts;
+    }, {});
+    const totalCombinationDocs = combination.length || 1;
+
+    for (const [count, targetShare] of Object.entries(mealCountDistribution)) {
+      const actualShare = (combinationCounts[count] || 0) / totalCombinationDocs;
+      score += Math.abs(actualShare - targetShare) * 4;
+    }
+
+    for (const slot of combination) {
+      if (slot.numberOfMeals === 2) score += 0.15;
+      if (slot.numberOfMeals === 3) score += 0.45;
+    }
+
+    return score;
   };
 
-  if (!search(0, targetHalfUnits)) return null;
+  const search = (index, remaining) => {
+    if (remaining === 0) {
+      const combination = slots
+        .map((slot, slotIndex) => ({ ...slot, numberOfMeals: result[slotIndex] || 0 }))
+        .filter(slot => slot.numberOfMeals > 0);
+      const score = scoreCombination(combination);
 
-  return slots
-    .map((slot, index) => ({ ...slot, numberOfMeals: result[index] || 0 }))
-    .filter(slot => slot.numberOfMeals > 0);
+      if (score < bestScore) {
+        bestScore = score;
+        best = combination;
+      }
+
+      return;
+    }
+    if (index >= slots.length) return false;
+
+    const slot = slots[index];
+    const maxForSlot = Math.min(maxMealsPerRegistration, Math.floor(remaining / slot.weightHalfUnits));
+
+    for (let count = maxForSlot; count >= 0; count -= 1) {
+      result[index] = count;
+      search(index + 1, remaining - count * slot.weightHalfUnits);
+    }
+
+    result[index] = 0;
+  };
+
+  search(0, targetHalfUnits);
+  return best;
 };
 
 const main = async () => {
@@ -106,6 +176,13 @@ const main = async () => {
 
   const docs = [];
   const unresolved = [];
+  const runningDateHalfUnits = new Map(slots.map(slot => [toDay(slot.date), 0]));
+  const totalGapHalfUnits = (finalization.memberDetails || []).reduce((sum, member) => {
+    const target = Number(member.totalMeals) || 0;
+    const current = currentByUser.get(member.userId) || 0;
+    const gap = target - current;
+    return gap > 0 ? sum + roundHalfUnits(gap) : sum;
+  }, 0);
 
   for (const member of finalization.memberDetails || []) {
     const target = Number(member.totalMeals) || 0;
@@ -118,10 +195,18 @@ const main = async () => {
       continue;
     }
 
-    const combination = findCombination(roundHalfUnits(gap), slots);
+    const combination = findCombination(roundHalfUnits(gap), slots, runningDateHalfUnits, totalGapHalfUnits);
     if (!combination) {
       unresolved.push({ userId: member.userId, userName: member.userName, target, current, gap });
       continue;
+    }
+
+    for (const item of combination) {
+      const dateKey = toDay(item.date);
+      runningDateHalfUnits.set(
+        dateKey,
+        (runningDateHalfUnits.get(dateKey) || 0) + item.numberOfMeals * item.weightHalfUnits
+      );
     }
 
     for (const item of combination) {
@@ -144,6 +229,33 @@ const main = async () => {
     return sum + doc.numberOfMeals * slot.weight;
   }, 0);
 
+  const plannedByDate = docs.reduce((summary, doc) => {
+    const dateKey = toDay(doc.date);
+    const slot = slots.find(item => item.date.getTime() === doc.date.getTime() && item.mealType === doc.mealType);
+
+    if (!summary[dateKey]) {
+      summary[dateKey] = { registrationDocs: 0, mealQuantity: 0, weightedMeals: 0 };
+    }
+
+    summary[dateKey].registrationDocs += 1;
+    summary[dateKey].mealQuantity += doc.numberOfMeals;
+    summary[dateKey].weightedMeals += doc.numberOfMeals * slot.weight;
+    return summary;
+  }, {});
+
+  const plannedMealCountDistribution = docs.reduce((summary, doc) => {
+    const key = String(doc.numberOfMeals);
+    summary[key] = (summary[key] || 0) + 1;
+    return summary;
+  }, {});
+
+  for (const key of Object.keys(plannedMealCountDistribution)) {
+    plannedMealCountDistribution[key] = {
+      registrationDocs: plannedMealCountDistribution[key],
+      percentage: Number(((plannedMealCountDistribution[key] / docs.length) * 100).toFixed(2)),
+    };
+  }
+
   const summary = {
     mode: apply ? 'apply' : 'dry-run',
     month,
@@ -152,6 +264,8 @@ const main = async () => {
     currentTotal: Array.from(currentByUser.values()).reduce((sum, value) => sum + value, 0),
     plannedBackfillTotal: plannedTotal,
     plannedInsertCount: docs.length,
+    plannedByDate,
+    plannedMealCountDistribution,
     unresolvedCount: unresolved.length,
     unresolved,
   };
