@@ -1,6 +1,32 @@
 const { ObjectId } = require('mongodb');
 const { format } = require('date-fns');
 const { getCollections } = require('../../config/connectMongodb');
+const { DINING_IDS, DEFAULT_DINING_ID, normalizeDiningId } = require('../../config/dining');
+
+const getDiningQuery = (diningId = DEFAULT_DINING_ID) => {
+  const normalizedDiningId = normalizeDiningId(diningId);
+
+  if (normalizedDiningId === DEFAULT_DINING_ID) {
+    return { $or: [{ diningId: DEFAULT_DINING_ID }, { diningId: { $exists: false } }] };
+  }
+
+  return { diningId: normalizedDiningId };
+};
+
+const createDiningSummaryMap = () => DINING_IDS.reduce((summary, diningId) => {
+  summary[diningId] = {
+    diningId,
+    totalMealsServed: 0,
+    totalExpenses: 0,
+    mealRate: 0,
+    expenseBreakdown: {}
+  };
+  return summary;
+}, {});
+
+const toExpenseBreakdownArray = (expenseBreakdown) => (
+  Object.entries(expenseBreakdown).map(([category, amount]) => ({ category, amount }))
+);
 
 const addDeposit = async (req, res) => {
   try {
@@ -102,6 +128,7 @@ const getMonthlyDepositByUserId = async (req, res) => {
 const addExpense = async (req, res) => {
   try {
     const { date, category, amount, description, person } = req.body;
+    const diningId = normalizeDiningId(req.body?.diningId);
     const managerId = req.user?._id;
 
     if (!date || !category || !amount) {
@@ -112,10 +139,15 @@ const addExpense = async (req, res) => {
       return res.status(400).json({ error: 'amount must be a positive number' });
     }
 
+    if (!DINING_IDS.includes(diningId)) {
+      return res.status(400).json({ error: `diningId must be one of: ${DINING_IDS.join(', ')}` });
+    }
+
     const { expenses } = await getCollections();
 
     const expense = {
       date: new Date(date),
+      diningId,
       category,
       amount,
       description: description || '',
@@ -317,13 +349,21 @@ const finalizeMonth = async (req, res) => {
       balanceByUser[b.userId.toString()] = b.balance || 0;
     }
 
+    const diningSummaryMap = createDiningSummaryMap();
     const totalExpenses = monthExpenses.reduce((sum, exp) => sum + exp.amount, 0);
 
     const expenseBreakdown = {};
     for (const exp of monthExpenses) {
       expenseBreakdown[exp.category] = (expenseBreakdown[exp.category] || 0) + exp.amount;
+
+      const expenseDiningId = normalizeDiningId(exp.diningId);
+      if (!diningSummaryMap[expenseDiningId]) continue;
+
+      diningSummaryMap[expenseDiningId].totalExpenses += exp.amount;
+      diningSummaryMap[expenseDiningId].expenseBreakdown[exp.category] =
+        (diningSummaryMap[expenseDiningId].expenseBreakdown[exp.category] || 0) + exp.amount;
     }
-    const expenseBreakdownArray = Object.entries(expenseBreakdown).map(([category, amount]) => ({ category, amount }));
+    const expenseBreakdownArray = toExpenseBreakdownArray(expenseBreakdown);
 
     const userMealsMap = {};
     let totalMealsServed = 0;
@@ -331,25 +371,49 @@ const finalizeMonth = async (req, res) => {
     for (const user of allUsers) {
       const userId = user._id.toString();
       const userRegs = registrationsByUser[userId] || [];
-      let userTotalMeals = 0;
+      const userMealsByDining = DINING_IDS.reduce((summary, diningId) => {
+        summary[diningId] = 0;
+        return summary;
+      }, {});
 
       for (const reg of userRegs) {
         const schedule = scheduleMap[reg.date.toISOString()];
         if (schedule) {
-          const meal = schedule.availableMeals.find(m => m.mealType === reg.mealType);
+          const registrationDiningId = normalizeDiningId(reg.diningId);
+          const meal = schedule.availableMeals.find(
+            m => m.mealType === reg.mealType && normalizeDiningId(m.diningId) === registrationDiningId
+          );
           const weight = meal?.weight || 1;
           const numberOfMeals = reg.numberOfMeals || 1;
-          userTotalMeals += numberOfMeals * weight;
+          const weightedMeals = numberOfMeals * weight;
+
+          if (userMealsByDining[registrationDiningId] !== undefined) {
+            userMealsByDining[registrationDiningId] += weightedMeals;
+          }
+
+          if (diningSummaryMap[registrationDiningId]) {
+            diningSummaryMap[registrationDiningId].totalMealsServed += weightedMeals;
+          }
+
+          totalMealsServed += weightedMeals;
         }
       }
 
-      userMealsMap[userId] = userTotalMeals;
-      totalMealsServed += userTotalMeals;
+      userMealsMap[userId] = userMealsByDining;
+    }
+
+    for (const diningId of DINING_IDS) {
+      const diningSummary = diningSummaryMap[diningId];
+      diningSummary.mealRate = diningSummary.totalMealsServed > 0
+        ? parseFloat((diningSummary.totalExpenses / diningSummary.totalMealsServed).toFixed(2))
+        : 0;
+      diningSummary.expenseBreakdown = toExpenseBreakdownArray(diningSummary.expenseBreakdown);
     }
 
     const mealRate = totalMealsServed > 0
       ? parseFloat((totalExpenses / totalMealsServed).toFixed(2))
       : 0;
+    const diningBreakdown = DINING_IDS.map(diningId => diningSummaryMap[diningId]);
     const totalDeposits = Object.values(depositsByUser).reduce((sum, amt) => sum + amt, 0);
     const totalFixedDeposit = allUsers.reduce((sum, user) => sum + (Number(user.fixedDeposit) || 0), 0);
 
@@ -361,9 +425,22 @@ const finalizeMonth = async (req, res) => {
 
     for (const user of allUsers) {
       const userId = user._id.toString();
-      const totalMeals = userMealsMap[userId] || 0;
+      const mealsByDining = userMealsMap[userId] || {};
+      const diningDetails = DINING_IDS.map((diningId) => {
+        const totalMeals = mealsByDining[diningId] || 0;
+        const diningMealRate = diningSummaryMap[diningId].mealRate;
+        const mealCost = parseFloat((totalMeals * diningMealRate).toFixed(2));
+
+        return {
+          diningId,
+          totalMeals,
+          mealRate: diningMealRate,
+          mealCost
+        };
+      });
+      const totalMeals = diningDetails.reduce((sum, dining) => sum + dining.totalMeals, 0);
       const totalUserDeposits = depositsByUser[userId] || 0;
-      const mealCost = totalMeals * mealRate;
+      const mealCost = parseFloat(diningDetails.reduce((sum, dining) => sum + dining.mealCost, 0).toFixed(2));
       const previousBalance = balanceByUser[userId] || 0;
       const mosqueFee = Number(user.mosqueFee) || 0;
       const newBalance = previousBalance - mealCost - mosqueFee;
@@ -374,7 +451,18 @@ const finalizeMonth = async (req, res) => {
       if (newBalance < 0) status = 'due';
       if (newBalance > 0) status = 'advance';
 
-      memberDetails.push({ userId, userName: user.name, totalMeals, totalDeposits: totalUserDeposits, mealCost, mosqueFee, previousBalance, newBalance, status });
+      memberDetails.push({
+        userId,
+        userName: user.name,
+        totalMeals,
+        totalDeposits: totalUserDeposits,
+        mealCost,
+        mosqueFee,
+        previousBalance,
+        newBalance,
+        status,
+        diningDetails
+      });
 
       balanceUpdates.push({
         updateOne: {
@@ -393,8 +481,9 @@ const finalizeMonth = async (req, res) => {
       month, finalizedAt: now, finalizedBy: managerId,
       totalMembers: allUsers.length, totalMealsServed, totalDeposits,
       totalFixedDeposit, totalMosqueFee, totalMemberBalancesAfterFinalization,
+      cashAtHand: totalFixedDeposit + totalMosqueFee + totalMemberBalancesAfterFinalization,
       totalExpenses, mealRate, memberDetails,
-      expenseBreakdown: expenseBreakdownArray, isFinalized: true, notes: ''
+      expenseBreakdown: expenseBreakdownArray, diningBreakdown, isFinalized: true, notes: ''
     };
 
     const result = await monthlyFinalization.insertOne(finalizationRecord);
@@ -405,7 +494,11 @@ const finalizeMonth = async (req, res) => {
       summary: {
         month, totalMembers: allUsers.length, totalMealsServed,
         totalDeposits, totalFixedDeposit, totalMosqueFee,
-        totalMemberBalancesAfterFinalization, totalExpenses, mealRate: parseFloat(mealRate.toFixed(2))
+        totalMemberBalancesAfterFinalization,
+        cashAtHand: finalizationRecord.cashAtHand,
+        totalExpenses,
+        mealRate: parseFloat(mealRate.toFixed(2)),
+        diningBreakdown
       }
     });
 
@@ -448,7 +541,7 @@ const getMyFinalizationData = async (req, res) => {
 
     const record = await monthlyFinalization.findOne(
       { month },
-      { projection: { month: 1, finalizedAt: 1, mealRate: 1, totalMealsServed: 1, totalExpenses: 1, memberDetails: 1 } }
+      { projection: { month: 1, finalizedAt: 1, mealRate: 1, totalMealsServed: 1, totalExpenses: 1, diningBreakdown: 1, memberDetails: 1 } }
     );
 
     if (!record) {
@@ -465,7 +558,7 @@ const getMyFinalizationData = async (req, res) => {
       finalization: {
         month: record.month, finalizedAt: record.finalizedAt,
         mealRate: record.mealRate, totalMealsServed: record.totalMealsServed,
-        totalExpenses: record.totalExpenses, ...myDetails
+        totalExpenses: record.totalExpenses, diningBreakdown: record.diningBreakdown || [], ...myDetails
       }
     });
 
@@ -667,6 +760,7 @@ const deleteDeposit = async (req, res) => {
 const getAllExpenses = async (req, res) => {
   try {
     const { startDate, endDate, category } = req.query;
+    const diningId = req.query.diningId ? normalizeDiningId(req.query.diningId) : null;
 
     const query = {};
     if (startDate && endDate) {
@@ -677,6 +771,12 @@ const getAllExpenses = async (req, res) => {
       query.date = { $gte: start, $lte: end };
     }
     if (category) query.category = category;
+    if (diningId) {
+      if (!DINING_IDS.includes(diningId)) {
+        return res.status(400).json({ error: `diningId must be one of: ${DINING_IDS.join(', ')}` });
+      }
+      Object.assign(query, getDiningQuery(diningId));
+    }
 
     const { users, expenses } = await getCollections();
 
@@ -693,6 +793,7 @@ const getAllExpenses = async (req, res) => {
 
     const enrichedExpenses = allExpenses.map(expense => ({
       ...expense,
+      diningId: normalizeDiningId(expense.diningId),
       addedByName: managersMap[expense.addedBy?.toString()]?.name || 'Unknown'
     }));
 
@@ -708,9 +809,14 @@ const updateExpense = async (req, res) => {
   try {
     const { expenseId } = req.params;
     const { date, category, amount, description, person } = req.body;
+    const requestedDiningId = req.body?.diningId !== undefined ? normalizeDiningId(req.body.diningId) : null;
 
     if (!ObjectId.isValid(expenseId)) {
       return res.status(400).json({ error: 'Invalid expense ID' });
+    }
+
+    if (requestedDiningId && !DINING_IDS.includes(requestedDiningId)) {
+      return res.status(400).json({ error: `diningId must be one of: ${DINING_IDS.join(', ')}` });
     }
 
     const { expenses, monthlyFinalization } = await getCollections();
@@ -736,6 +842,7 @@ const updateExpense = async (req, res) => {
     if (amount !== undefined) updateData.amount = amount;
     if (description !== undefined) updateData.description = description;
     if (person !== undefined) updateData.person = person;
+    if (requestedDiningId) updateData.diningId = requestedDiningId;
 
     await expenses.updateOne({ _id: new ObjectId(expenseId) }, { $set: updateData });
 

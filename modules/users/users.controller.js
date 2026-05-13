@@ -234,12 +234,15 @@ const updateMealRegistration = async (req, res) => {
         return res.status(404).json({ error: 'Meal schedule not found for this date' });
       }
 
-      const mealConfig = schedule.availableMeals.find(m => m.mealType === registration.mealType);
+      const registrationDiningId = normalizeDiningId(registration.diningId);
+      const mealConfig = schedule.availableMeals.find(
+        m => m.mealType === registration.mealType && normalizeDiningId(m.diningId) === registrationDiningId
+      );
       if (!mealConfig || !mealConfig.isAvailable) {
         return res.status(400).json({ error: 'Meal is no longer available for modification' });
       }
 
-      const deadline = calculateDeadline(new Date(registration.date), registration.mealType, null);
+      const deadline = calculateDeadline(new Date(registration.date), registration.mealType, mealConfig.customDeadline);
       if (new Date() > deadline) {
         return res.status(400).json({ error: 'Deadline has passed. Changes are no longer allowed.' });
       }
@@ -282,7 +285,10 @@ const cancelMealRegistration = async (req, res) => {
         return res.status(404).json({ error: 'Meal schedule not found' });
       }
 
-      const meal = schedule.availableMeals.find(m => m.mealType === registration.mealType);
+      const registrationDiningId = normalizeDiningId(registration.diningId);
+      const meal = schedule.availableMeals.find(
+        m => m.mealType === registration.mealType && normalizeDiningId(m.diningId) === registrationDiningId
+      );
       if (!meal) {
         return res.status(400).json({ error: 'Meal configuration not found' });
       }
@@ -400,7 +406,10 @@ const getTotalMealsForUser = async (req, res) => {
     for (const registration of registrations) {
       const schedule = scheduleMap[registration.date.toISOString()];
       if (schedule) {
-        const meal = schedule.availableMeals.find(m => m.mealType === registration.mealType);
+        const registrationDiningId = normalizeDiningId(registration.diningId);
+        const meal = schedule.availableMeals.find(
+          m => m.mealType === registration.mealType && normalizeDiningId(m.diningId) === registrationDiningId
+        );
         if (meal) {
           const weight = meal.weight || 1;
           const numberOfMeals = registration.numberOfMeals || 1;

@@ -269,7 +269,7 @@ const updateSchedule = async (req, res) => {
         .filter((meal) => {
           const previousMeal = previousMealsByType.get(meal.mealType);
           if (!previousMeal?.isAvailable) return false;
-          return !meal.isAvailable || normalizeDiningId(previousMeal.diningId) !== meal.diningId;
+          return !meal.isAvailable;
         })
         .map(meal => meal.mealType)
       : [];
@@ -281,12 +281,32 @@ const updateSchedule = async (req, res) => {
       });
     }
 
+    const mealsToMove = normalizedAvailableMeals
+      ? normalizedAvailableMeals
+        .filter((meal) => {
+          const previousMeal = previousMealsByType.get(meal.mealType);
+          return previousMeal?.isAvailable
+            && meal.isAvailable
+            && normalizeDiningId(previousMeal.diningId) !== meal.diningId;
+        })
+      : [];
+
+    let registrationsMoved = 0;
+
+    for (const meal of mealsToMove) {
+      const moveResult = await mealRegistrations.updateMany(
+        { date: result.date, mealType: meal.mealType },
+        { $set: { diningId: meal.diningId, updatedAt: new Date() } }
+      );
+      registrationsMoved += moveResult.modifiedCount;
+    }
+
     const mealsNeedingRegistration = normalizedAvailableMeals
       ? normalizedAvailableMeals
         .filter((meal) => {
           if (!meal.isAvailable) return false;
           const previousMeal = previousMealsByType.get(meal.mealType);
-          return !previousMeal?.isAvailable || normalizeDiningId(previousMeal.diningId) !== meal.diningId;
+          return !previousMeal?.isAvailable;
         })
       : [];
 
@@ -343,6 +363,7 @@ const updateSchedule = async (req, res) => {
     return res.status(200).json({
       message: 'Schedule and registrations updated successfully',
       schedule: result,
+      registrationsMoved,
       registrationsCreated
     });
 

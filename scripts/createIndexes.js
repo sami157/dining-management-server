@@ -21,6 +21,7 @@ async function createIndexes() {
   await mealSchedules.createIndex({ date: 1 });
   await mealSchedules.createIndex({ date: 1, 'availableMeals.diningId': 1 });
   await deposits.createIndex({ month: 1 });
+  await expenses.createIndex({ date: 1, diningId: 1 });
   await memberBalances.createIndex({ userId: 1 });
   await monthlyFinalization.createIndex({ month: 1 });
   await passwordRecoveryCodes.createIndex({ userId: 1, used: 1, expiresAt: 1 });

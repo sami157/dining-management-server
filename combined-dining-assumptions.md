@@ -54,7 +54,9 @@
 
 - Financial calculations will be handled separately per dining location from the frontend.
 - The same admins will handle finance for both locations.
-- Monthly finalization will be done separately per dining location.
+- Monthly finalization will be done once per month, across both dining locations.
+- Monthly finalization should calculate per-dining meal totals, expenses, meal rates, and member meal costs as metadata.
+- Each member's balance should be charged by summing that member's township and office meal costs.
 - Deposits and member balances are shared across the combined dining system.
 
 ## Compatibility
