@@ -2,6 +2,10 @@ const { ObjectId } = require('mongodb');
 const { getCollections } = require('../../config/connectMongodb');
 
 const VALID_ROLES = ['admin', 'manager', 'member', 'moderator', 'staff', 'super_admin'];
+const VALID_DINING_IDS = ['township', 'office'];
+const DEFAULT_DINING_ID = 'township';
+
+const normalizeDiningId = (diningId = DEFAULT_DINING_ID) => String(diningId).trim().toLowerCase();
 
 const createUser = async (req, res) => {
   try {
@@ -24,6 +28,7 @@ const createUser = async (req, res) => {
       department: department || '',
       role: 'member',
       isActive: true,
+      mealDefaultOffice: false,
       fixedDeposit: 0,
       mosqueFee: 0,
       createdAt: new Date(),
@@ -100,15 +105,22 @@ const updateMealDefault = async (req, res) => {
   try {
     const userId = req.user?._id;
     const { mealDefault } = req.body;
+    const diningId = normalizeDiningId(req.body?.diningId);
 
     if (typeof mealDefault !== 'boolean') {
       return res.status(400).json({ error: 'mealDefault must be a boolean' });
     }
 
+    if (!VALID_DINING_IDS.includes(diningId)) {
+      return res.status(400).json({ error: `diningId must be one of: ${VALID_DINING_IDS.join(', ')}` });
+    }
+
+    const defaultField = diningId === 'office' ? 'mealDefaultOffice' : 'mealDefault';
+
     const { users } = await getCollections();
     const result = await users.findOneAndUpdate(
       { _id: userId },
-      { $set: { mealDefault, updatedAt: new Date() } },
+      { $set: { [defaultField]: mealDefault, updatedAt: new Date() } },
       { returnDocument: 'after' }
     );
 
