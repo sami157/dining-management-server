@@ -15,8 +15,11 @@ async function createIndexes() {
   await users.createIndex({ email: 1 });
   await users.createIndex({ isActive: 1 });
   await mealRegistrations.createIndex({ userId: 1, date: 1 });
+  await mealRegistrations.createIndex({ userId: 1, date: 1, diningId: 1 });
   await mealRegistrations.createIndex({ date: 1 });
+  await mealRegistrations.createIndex({ date: 1, diningId: 1 });
   await mealSchedules.createIndex({ date: 1 });
+  await mealSchedules.createIndex({ date: 1, 'availableMeals.diningId': 1 });
   await deposits.createIndex({ month: 1 });
   await memberBalances.createIndex({ userId: 1 });
   await monthlyFinalization.createIndex({ month: 1 });

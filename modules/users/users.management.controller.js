@@ -1,11 +1,8 @@
 const { ObjectId } = require('mongodb');
 const { getCollections } = require('../../config/connectMongodb');
+const { DINING_IDS, normalizeDiningId, getMealDefaultField } = require('../../config/dining');
 
 const VALID_ROLES = ['admin', 'manager', 'member', 'moderator', 'staff', 'super_admin'];
-const VALID_DINING_IDS = ['township', 'office'];
-const DEFAULT_DINING_ID = 'township';
-
-const normalizeDiningId = (diningId = DEFAULT_DINING_ID) => String(diningId).trim().toLowerCase();
 
 const createUser = async (req, res) => {
   try {
@@ -111,11 +108,11 @@ const updateMealDefault = async (req, res) => {
       return res.status(400).json({ error: 'mealDefault must be a boolean' });
     }
 
-    if (!VALID_DINING_IDS.includes(diningId)) {
-      return res.status(400).json({ error: `diningId must be one of: ${VALID_DINING_IDS.join(', ')}` });
+    if (!DINING_IDS.includes(diningId)) {
+      return res.status(400).json({ error: `diningId must be one of: ${DINING_IDS.join(', ')}` });
     }
 
-    const defaultField = diningId === 'office' ? 'mealDefaultOffice' : 'mealDefault';
+    const defaultField = getMealDefaultField(diningId);
 
     const { users } = await getCollections();
     const result = await users.findOneAndUpdate(

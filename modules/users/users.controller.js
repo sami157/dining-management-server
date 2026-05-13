@@ -1,5 +1,6 @@
 const { ObjectId } = require('mongodb');
 const { getCollections } = require('../../config/connectMongodb');
+const { DINING_IDS, normalizeDiningId } = require('../../config/dining');
 const { DateTime } = require('luxon');
 
 // Default deadline rules
@@ -61,20 +62,22 @@ const getAvailableMeals = async (req, res) => {
 
     const registrationMap = {};
     userRegistrations.forEach(reg => {
-      const key = `${reg.date.toISOString().split('T')[0]}_${reg.mealType}`;
+      const key = `${reg.date.toISOString().split('T')[0]}_${reg.mealType}_${normalizeDiningId(reg.diningId)}`;
       registrationMap[key] = reg;
     });
 
     const availableMeals = schedules.map(schedule => {
       const meals = schedule.availableMeals.map(meal => {
+        const diningId = normalizeDiningId(meal.diningId);
         const deadline = calculateDeadline(schedule.date, meal.mealType, meal.customDeadline);
         const isDeadlinePassed = currentTime > deadline;
-        const registrationKey = `${schedule.date.toISOString().split('T')[0]}_${meal.mealType}`;
+        const registrationKey = `${schedule.date.toISOString().split('T')[0]}_${meal.mealType}_${diningId}`;
         const existingRegistration = registrationMap[registrationKey];
         const isRegistered = !!existingRegistration;
 
         return {
           mealType: meal.mealType,
+          diningId,
           isAvailable: meal.isAvailable,
           menu: meal.menu || '',
           weight: meal.weight || 1,
@@ -100,6 +103,7 @@ const getAvailableMeals = async (req, res) => {
 const registerMeal = async (req, res) => {
   try {
     const { date, mealType, userId: requestUserId, numberOfMeals } = req.body;
+    const diningId = normalizeDiningId(req.body?.diningId);
     let userId = req.user?._id;
     let isLateRegistration = false
     const currentTime = new Date();
@@ -119,6 +123,10 @@ const registerMeal = async (req, res) => {
       return res.status(400).json({ error: 'mealType must be morning, evening, or night' });
     }
 
+    if (!DINING_IDS.includes(diningId)) {
+      return res.status(400).json({ error: `diningId must be one of: ${DINING_IDS.join(', ')}` });
+    }
+
     const mealDate = new Date(date);
 
     const { mealSchedules, mealRegistrations, users, systemLogs } = await getCollections();
@@ -128,9 +136,9 @@ const registerMeal = async (req, res) => {
       return res.status(404).json({ error: 'No meal schedule found for this date' });
     }
 
-    const meal = schedule.availableMeals.find(m => m.mealType === mealType);
+    const meal = schedule.availableMeals.find(m => m.mealType === mealType && normalizeDiningId(m.diningId) === diningId);
     if (!meal || !meal.isAvailable) {
-      return res.status(400).json({ error: 'This meal is not available on this date' });
+      return res.status(400).json({ error: 'This meal is not available at this dining location on this date' });
     }
 
     if (!requestUserId) {
@@ -140,7 +148,7 @@ const registerMeal = async (req, res) => {
       }
     }
 
-    const existingRegistration = await mealRegistrations.findOne({ userId, date: mealDate, mealType });
+    const existingRegistration = await mealRegistrations.findOne({ userId, date: mealDate, mealType, diningId });
     if (existingRegistration) {
       return res.status(400).json({ error: 'You have already registered for this meal' });
     }
@@ -148,6 +156,7 @@ const registerMeal = async (req, res) => {
     const registration = {
       userId,
       date: mealDate,
+      diningId,
       mealType,
       numberOfMeals: numberOfMeals || 1,
       registeredAt: new Date()
@@ -449,7 +458,7 @@ const bulkToggleMealsForUser = async (req, res) => {
 
     // Build a set of already-registered (date + mealType) pairs
     const registeredSet = new Set(
-      existingRegistrations.map(r => `${r.date.toISOString()}_${r.mealType}`)
+      existingRegistrations.map(r => `${r.date.toISOString()}_${r.mealType}_${normalizeDiningId(r.diningId)}`)
     );
 
     const toInsert = [];
@@ -458,7 +467,8 @@ const bulkToggleMealsForUser = async (req, res) => {
       for (const meal of schedule.availableMeals) {
         if (!meal.isAvailable) continue;
 
-        const key = `${schedule.date.toISOString()}_${meal.mealType}`;
+        const diningId = normalizeDiningId(meal.diningId);
+        const key = `${schedule.date.toISOString()}_${meal.mealType}_${diningId}`;
         if (registeredSet.has(key)) continue;
 
         const deadline = calculateDeadline(schedule.date, meal.mealType, meal.customDeadline);
@@ -467,6 +477,7 @@ const bulkToggleMealsForUser = async (req, res) => {
         toInsert.push({
           userId,
           date: schedule.date,
+          diningId,
           mealType: meal.mealType,
           numberOfMeals: 1,
           registeredAt: new Date(),

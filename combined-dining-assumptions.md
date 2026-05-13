@@ -11,34 +11,30 @@
 
 ## Meal Availability
 
-- A specific meal slot can be available at only one dining location at a time.
-- The same `date + mealType` must not be available in both `township` and `office`.
-- The backend should enforce this uniqueness rule.
+- The meal schedule is common for a date.
+- Each meal item inside the schedule has its own dining location.
+- A specific meal slot belongs to only one dining location at a time.
+- The same `date + mealType` must not be represented as available in both `township` and `office`.
 - The two dining patterns are complementary and together fill every meal slot in a week.
 
 ## Township Pattern
 
-- `township` keeps the current meal generation pattern.
+- `township` keeps the current meal generation pattern for the meals it owns.
 - Friday and Saturday:
-  - `morning` available
-  - `evening` available
-  - `night` available
+  - `morning` served at `township`
+  - `evening` served at `township`
+  - `night` served at `township`
 - Sunday through Thursday:
-  - `morning` unavailable
-  - `evening` unavailable
-  - `night` available
+  - `night` served at `township`
 
 ## Office Pattern
 
 - `office` uses the opposite of the current township pattern.
 - Friday and Saturday:
-  - `morning` unavailable
-  - `evening` unavailable
-  - `night` unavailable
+  - no meals served at `office`
 - Sunday through Thursday:
-  - `morning` available
-  - `evening` available
-  - `night` unavailable
+  - `morning` served at `office`
+  - `evening` served at `office`
 
 ## Registration
 

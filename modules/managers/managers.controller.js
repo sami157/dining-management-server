@@ -1,5 +1,6 @@
 const { ObjectId } = require('mongodb');
 const { getCollections } = require('../../config/connectMongodb');
+const { DINING_IDS, DEFAULT_DINING_ID, normalizeDiningId, getMealDefaultField } = require('../../config/dining');
 
 // Helper function to check if a date is weekend (Fri or Sat)
 const isWeekend = (date) => {
@@ -7,26 +8,36 @@ const isWeekend = (date) => {
   return day === 5 || day === 6;
 };
 
-// Helper function to get available meals based on day type
-const getDefaultMeals = (date, isHoliday) => {
-  const meals = [];
+const buildDiningMeal = (mealType, diningId, weight) => ({
+  mealType,
+  isAvailable: true,
+  diningId,
+  customDeadline: null,
+  weight,
+  menu: ''
+});
 
-  if (isWeekend(date) || isHoliday) {
-    meals.push(
-      { mealType: 'morning', isAvailable: true, customDeadline: null, weight: 0.5, menu: '' },
-      { mealType: 'evening', isAvailable: true, customDeadline: null, weight: 1, menu: '' },
-      { mealType: 'night', isAvailable: true, customDeadline: null, weight: 1, menu: '' }
-    );
-  } else {
-    meals.push(
-      { mealType: 'morning', isAvailable: false, customDeadline: null, weight: 0.5, menu: '' },
-      { mealType: 'evening', isAvailable: false, customDeadline: null, weight: 1, menu: '' },
-      { mealType: 'night', isAvailable: true, customDeadline: null, weight: 1, menu: '' }
-    );
+// Helper function to get the full daily meal pattern. The schedule is common,
+// and each meal carries the dining location where it will be served.
+const getDefaultMeals = (date, isHoliday) => {
+  const isWeekendOrHoliday = isWeekend(date) || isHoliday;
+
+  if (isWeekendOrHoliday) {
+    return [
+      buildDiningMeal('morning', 'township', 0.5),
+      buildDiningMeal('evening', 'township', 1),
+      buildDiningMeal('night', 'township', 1)
+    ];
   }
 
-  return meals;
+  return [
+    buildDiningMeal('morning', 'office', 0.5),
+    buildDiningMeal('evening', 'office', 1),
+    buildDiningMeal('night', 'township', 1)
+  ];
 };
+
+const getRegistrationDiningQuery = (diningId = DEFAULT_DINING_ID) => ({ diningId: normalizeDiningId(diningId) });
 
 const generateSchedules = async (req, res) => {
   try {
@@ -59,14 +70,18 @@ const generateSchedules = async (req, res) => {
 
     const { mealSchedules, mealRegistrations, users } = await getCollections();
 
-    // Fetch existing schedules and default users in parallel
-    const [existingSchedules, defaultUsers] = await Promise.all([
+    // Fetch existing schedules and default users for both dining locations in parallel.
+    const [existingSchedules, townshipDefaultUsers, officeDefaultUsers] = await Promise.all([
       mealSchedules.find(
         { date: { $gte: start, $lte: end } },
         { projection: { date: 1 } }
       ).toArray(),
       users.find(
         { mealDefault: true, isActive: { $ne: false } },
+        { projection: { _id: 1 } }
+      ).toArray(),
+      users.find(
+        { mealDefaultOffice: true, isActive: { $ne: false } },
         { projection: { _id: 1 } }
       ).toArray()
     ]);
@@ -103,31 +118,34 @@ const generateSchedules = async (req, res) => {
     let registrationsCreated = 0;
 
     // Auto-register default users for each new schedule
-    if (defaultUsers.length > 0) {
-      const registrations = [];
+    const defaultUsersByDining = {
+      township: townshipDefaultUsers,
+      office: officeDefaultUsers
+    };
+    const registrations = [];
 
-      for (const schedule of schedulesToCreate) {
-        const availableMealTypes = schedule.availableMeals
-          .filter(meal => meal.isAvailable)
-          .map(meal => meal.mealType);
+    for (const schedule of schedulesToCreate) {
+      const availableMeals = schedule.availableMeals.filter(meal => meal.isAvailable);
+
+      for (const meal of availableMeals) {
+        const defaultUsers = defaultUsersByDining[meal.diningId] || [];
 
         for (const user of defaultUsers) {
-          for (const mealType of availableMealTypes) {
-            registrations.push({
-              userId: user._id,
-              date: schedule.date,
-              mealType,
-              numberOfMeals: 1,
-              registeredAt: new Date()
-            });
-          }
+          registrations.push({
+            userId: user._id,
+            date: schedule.date,
+            diningId: meal.diningId,
+            mealType: meal.mealType,
+            numberOfMeals: 1,
+            registeredAt: new Date()
+          });
         }
       }
+    }
 
-      if (registrations.length > 0) {
-        const registrationResult = await mealRegistrations.insertMany(registrations);
-        registrationsCreated = registrationResult.insertedCount;
-      }
+    if (registrations.length > 0) {
+      const registrationResult = await mealRegistrations.insertMany(registrations);
+      registrationsCreated = registrationResult.insertedCount;
     }
 
     return res.status(201).json({
@@ -145,6 +163,7 @@ const generateSchedules = async (req, res) => {
 const getSchedules = async (req, res) => {
   try {
     const { startDate, endDate } = req.query;
+    const diningId = req.query.diningId ? normalizeDiningId(req.query.diningId) : null;
 
     if (!startDate || !endDate) {
       return res.status(400).json({ error: 'startDate and endDate are required' });
@@ -157,10 +176,17 @@ const getSchedules = async (req, res) => {
       return res.status(400).json({ error: 'startDate must be before endDate' });
     }
 
+    if (diningId && !DINING_IDS.includes(diningId)) {
+      return res.status(400).json({ error: `diningId must be one of: ${DINING_IDS.join(', ')}` });
+    }
+
+    const query = { date: { $gte: start, $lte: end } };
+    if (diningId) {
+      query.availableMeals = { $elemMatch: { diningId, isAvailable: true } };
+    }
+
     const { mealSchedules } = await getCollections();
-    const schedules = await mealSchedules.find({
-      date: { $gte: start, $lte: end }
-    }).sort({ date: 1 }).toArray();
+    const schedules = await mealSchedules.find(query).sort({ date: 1 }).toArray();
 
     return res.status(200).json({ count: schedules.length, schedules });
 
@@ -190,17 +216,6 @@ const updateSchedule = async (req, res) => {
       updateData.isHoliday = isHoliday;
     }
 
-    if (availableMeals) {
-      normalizedAvailableMeals = availableMeals.map(meal => ({
-        mealType: meal.mealType,
-        isAvailable: meal.isAvailable,
-        customDeadline: meal.customDeadline || null,
-        weight: meal.isAvailable ? (meal.weight !== undefined ? meal.weight : 1) : 0,
-        menu: meal.menu || ''
-      }));
-      updateData.availableMeals = normalizedAvailableMeals;
-    }
-
     const { mealSchedules, mealRegistrations, users } = await getCollections();
     const existingSchedule = await mealSchedules.findOne({ _id: new ObjectId(scheduleId) });
 
@@ -208,11 +223,36 @@ const updateSchedule = async (req, res) => {
       return res.status(404).json({ error: 'Schedule not found' });
     }
 
-    const previousAvailableMealTypes = new Set(
-      (existingSchedule.availableMeals || [])
-        .filter(meal => meal.isAvailable)
-        .map(meal => meal.mealType)
+    const previousMealsByType = new Map(
+      (existingSchedule.availableMeals || []).map(meal => [meal.mealType, meal])
     );
+
+    if (availableMeals) {
+      const invalidMeal = availableMeals.find((meal) => {
+        const previousMeal = previousMealsByType.get(meal.mealType);
+        const diningId = normalizeDiningId(meal.diningId || previousMeal?.diningId);
+        return !DINING_IDS.includes(diningId);
+      });
+
+      if (invalidMeal) {
+        return res.status(400).json({ error: `diningId must be one of: ${DINING_IDS.join(', ')}` });
+      }
+
+      normalizedAvailableMeals = availableMeals.map(meal => {
+        const previousMeal = previousMealsByType.get(meal.mealType);
+        const diningId = normalizeDiningId(meal.diningId || previousMeal?.diningId);
+
+        return {
+          mealType: meal.mealType,
+          isAvailable: meal.isAvailable,
+          diningId,
+          customDeadline: meal.customDeadline || null,
+          weight: meal.isAvailable ? (meal.weight !== undefined ? meal.weight : 1) : 0,
+          menu: meal.menu || ''
+        };
+      });
+      updateData.availableMeals = normalizedAvailableMeals;
+    }
 
     const result = await mealSchedules.findOneAndUpdate(
       { _id: new ObjectId(scheduleId) },
@@ -224,54 +264,69 @@ const updateSchedule = async (req, res) => {
       return res.status(404).json({ error: 'Schedule not found' });
     }
 
-    const unavailableMealTypes = result.availableMeals
-      .filter(meal => !meal.isAvailable)
-      .map(meal => meal.mealType);
+    const mealsToClear = normalizedAvailableMeals
+      ? normalizedAvailableMeals
+        .filter((meal) => {
+          const previousMeal = previousMealsByType.get(meal.mealType);
+          if (!previousMeal?.isAvailable) return false;
+          return !meal.isAvailable || normalizeDiningId(previousMeal.diningId) !== meal.diningId;
+        })
+        .map(meal => meal.mealType)
+      : [];
 
-    if (unavailableMealTypes.length > 0) {
+    if (mealsToClear.length > 0) {
       await mealRegistrations.deleteMany({
         date: result.date,
-        mealType: { $in: unavailableMealTypes }
+        mealType: { $in: mealsToClear }
       });
     }
 
-    const newlyAvailableMealTypes = normalizedAvailableMeals
+    const mealsNeedingRegistration = normalizedAvailableMeals
       ? normalizedAvailableMeals
-        .filter(meal => meal.isAvailable && !previousAvailableMealTypes.has(meal.mealType))
-        .map(meal => meal.mealType)
+        .filter((meal) => {
+          if (!meal.isAvailable) return false;
+          const previousMeal = previousMealsByType.get(meal.mealType);
+          return !previousMeal?.isAvailable || normalizeDiningId(previousMeal.diningId) !== meal.diningId;
+        })
       : [];
 
     let registrationsCreated = 0;
 
-    if (newlyAvailableMealTypes.length > 0) {
-      const [defaultUsers, existingRegistrations] = await Promise.all([
-        users.find(
-          { mealDefault: true, isActive: { $ne: false } },
+    if (mealsNeedingRegistration.length > 0) {
+      const diningIds = [...new Set(mealsNeedingRegistration.map(meal => meal.diningId))];
+      const defaultUsersByDining = {};
+
+      await Promise.all(diningIds.map(async (diningId) => {
+        defaultUsersByDining[diningId] = await users.find(
+          { [getMealDefaultField(diningId)]: true, isActive: { $ne: false } },
           { projection: { _id: 1 } }
-        ).toArray(),
-        mealRegistrations.find({
-          date: result.date,
-          mealType: { $in: newlyAvailableMealTypes }
-        }).toArray()
-      ]);
+        ).toArray();
+      }));
+
+      const existingRegistrations = await mealRegistrations.find({
+        date: result.date,
+        mealType: { $in: mealsNeedingRegistration.map(meal => meal.mealType) },
+        diningId: { $in: diningIds }
+      }).toArray();
 
       const existingRegistrationKeys = new Set(
-        existingRegistrations.map(registration => `${registration.userId?.toString()}_${registration.mealType}`)
+        existingRegistrations.map(registration => `${registration.userId?.toString()}_${registration.mealType}_${registration.diningId}`)
       );
 
       const registrationsToCreate = [];
 
-      for (const user of defaultUsers) {
-        const userId = user._id.toString();
+      for (const meal of mealsNeedingRegistration) {
+        const defaultUsers = defaultUsersByDining[meal.diningId] || [];
 
-        for (const mealType of newlyAvailableMealTypes) {
-          const key = `${userId}_${mealType}`;
+        for (const user of defaultUsers) {
+          const key = `${user._id.toString()}_${meal.mealType}_${meal.diningId}`;
 
           if (!existingRegistrationKeys.has(key)) {
             registrationsToCreate.push({
               userId: user._id,
               date: result.date,
-              mealType,
+              diningId: meal.diningId,
+              mealType: meal.mealType,
               numberOfMeals: 1,
               registeredAt: new Date()
             });
@@ -383,6 +438,7 @@ const deleteSchedule = async (req, res) => {
 const getAllRegistrations = async (req, res) => {
   try {
     const { startDate, endDate } = req.query;
+    const diningId = req.query.diningId ? normalizeDiningId(req.query.diningId) : null;
 
     if (!startDate || !endDate) {
       return res.status(400).json({ error: 'startDate and endDate query parameters are required' });
@@ -395,11 +451,18 @@ const getAllRegistrations = async (req, res) => {
       return res.status(400).json({ error: 'startDate must be before endDate' });
     }
 
+    if (diningId && !DINING_IDS.includes(diningId)) {
+      return res.status(400).json({ error: `diningId must be one of: ${DINING_IDS.join(', ')}` });
+    }
+
+    const query = { date: { $gte: start, $lte: end } };
+    if (diningId) {
+      Object.assign(query, getRegistrationDiningQuery(diningId));
+    }
+
     const { mealRegistrations, users } = await getCollections();
 
-    const registrations = await mealRegistrations.find({
-      date: { $gte: start, $lte: end }
-    }).sort({ date: 1, userId: 1, mealType: 1 }).toArray();
+    const registrations = await mealRegistrations.find(query).sort({ date: 1, diningId: 1, userId: 1, mealType: 1 }).toArray();
 
     const userIds = [...new Set(registrations.map(r => r.userId))];
     const usersMap = {};
