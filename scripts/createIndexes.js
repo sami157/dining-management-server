@@ -10,6 +10,7 @@ async function createIndexes() {
     memberBalances,
     monthlyFinalization,
     passwordRecoveryCodes,
+    mealDeliveryRequests,
   } = await getCollections();
 
   await users.createIndex({ email: 1 });
@@ -26,6 +27,9 @@ async function createIndexes() {
   await monthlyFinalization.createIndex({ month: 1 });
   await passwordRecoveryCodes.createIndex({ userId: 1, used: 1, expiresAt: 1 });
   await passwordRecoveryCodes.createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0 });
+  await mealDeliveryRequests.createIndex({ registrationId: 1 }, { unique: true });
+  await mealDeliveryRequests.createIndex({ date: 1, deliveryLocation: 1 });
+  await mealDeliveryRequests.createIndex({ userId: 1, date: 1 });
 
   console.log('All indexes created successfully');
   process.exit(0);

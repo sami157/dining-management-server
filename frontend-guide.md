@@ -133,6 +133,7 @@ Request body must include the meal's `diningId`:
   "date": "2026-06-07T00:00:00.000Z",
   "mealType": "morning",
   "diningId": "office",
+  "mealCategory": "basic",
   "numberOfMeals": 1
 }
 ```
@@ -144,12 +145,23 @@ Admin registering for another user:
   "date": "2026-06-07T00:00:00.000Z",
   "mealType": "morning",
   "diningId": "office",
+  "mealCategory": "alternative",
   "userId": "target_user_id",
   "numberOfMeals": 1
 }
 ```
 
 Response includes `diningId` inside `registration`.
+
+`mealCategory` is optional and defaults to `basic`.
+
+Allowed values:
+
+```ts
+type MealCategory = 'basic' | 'alternative';
+```
+
+Use `alternative` when a user needs the alternate meal for that registration.
 
 ## Updating and Cancelling Registrations
 
@@ -161,6 +173,41 @@ DELETE /users/meals/register/cancel/:registrationId
 ```
 
 The frontend does not need to pass `diningId` for update/cancel because the registration already stores it.
+
+Users can mark an existing registration as alternative:
+
+```http
+PATCH /users/meals/register/:registrationId
+```
+
+```json
+{
+  "mealCategory": "alternative"
+}
+```
+
+They can switch back to the regular meal:
+
+```json
+{
+  "mealCategory": "basic"
+}
+```
+
+The same endpoint can still update `numberOfMeals`:
+
+```json
+{
+  "numberOfMeals": 2,
+  "mealCategory": "alternative"
+}
+```
+
+Frontend changes:
+
+- Show a basic/alternative control for registered meals.
+- Only show or enable this control after the meal is registered.
+- Display alternative registrations clearly in manager registration views.
 
 ## Meal Defaults
 
@@ -435,3 +482,137 @@ Frontend changes:
 - Old expenses may still need `scripts/backfillDiningMetadata.js` to be run if not already applied after expense support was added.
 - Missing `diningId` is treated as `township` by the backend.
 - Current frontend should not break from extra `diningId` fields unless strict schema validation rejects unknown fields.
+
+## Meal Delivery Requests
+
+Users can request delivery for meals they are already registered for.
+
+Delivery locations are fixed:
+
+```ts
+type DeliveryLocation = 'township' | 'old_admin';
+```
+
+Recommended display labels:
+
+```ts
+const deliveryLocationLabels: Record<DeliveryLocation, string> = {
+  township: 'Township',
+  old_admin: 'Old Admin',
+};
+```
+
+### Default Delivery Location
+
+User profiles support:
+
+```ts
+interface User {
+  defaultDeliveryLocation?: DeliveryLocation | null;
+}
+```
+
+Update through the existing profile endpoint:
+
+```http
+PUT /users/profile
+```
+
+```json
+{
+  "defaultDeliveryLocation": "township"
+}
+```
+
+Clear the default:
+
+```json
+{
+  "defaultDeliveryLocation": null
+}
+```
+
+### Request Delivery
+
+Endpoint:
+
+```http
+PUT /users/meals/register/:registrationId/delivery
+```
+
+Request:
+
+```json
+{
+  "deliveryLocation": "old_admin"
+}
+```
+
+This creates or updates the delivery request for that registration.
+
+Response:
+
+```json
+{
+  "message": "Meal delivery request saved successfully",
+  "deliveryRequest": {
+    "_id": "delivery_request_id",
+    "registrationId": "registration_id",
+    "userId": "user_id",
+    "date": "2026-06-07T00:00:00.000Z",
+    "diningId": "office",
+    "mealType": "morning",
+    "deliveryLocation": "old_admin",
+    "requestedAt": "2026-05-14T10:00:00.000Z",
+    "updatedAt": "2026-05-14T10:00:00.000Z"
+  }
+}
+```
+
+### Cancel Delivery
+
+Endpoint:
+
+```http
+DELETE /users/meals/register/:registrationId/delivery
+```
+
+### Available Meals Response
+
+Registered meals include `deliveryRequest` when one exists:
+
+```json
+{
+  "mealType": "morning",
+  "diningId": "office",
+  "isRegistered": true,
+  "registrationId": "registration_id",
+  "deliveryRequest": {
+    "_id": "delivery_request_id",
+    "deliveryLocation": "old_admin",
+    "requestedAt": "2026-05-14T10:00:00.000Z",
+    "updatedAt": "2026-05-14T10:00:00.000Z"
+  }
+}
+```
+
+### Manager Delivery List
+
+Endpoint:
+
+```http
+GET /managers/delivery-requests?startDate=2026-06-01&endDate=2026-06-07
+```
+
+Optional filters:
+
+```http
+GET /managers/delivery-requests?startDate=2026-06-01&endDate=2026-06-07&deliveryLocation=old_admin&diningId=office
+```
+
+Frontend changes:
+
+- Add a delivery-location dropdown for registered meals.
+- Preselect the user's `defaultDeliveryLocation` when creating a request.
+- Show whether a registered meal already has a delivery request.
+- Add a manager view for delivery requests grouped by date, meal, and delivery location.

@@ -1,6 +1,7 @@
 const { ObjectId } = require('mongodb');
 const { getCollections } = require('../../config/connectMongodb');
 const { DINING_IDS, normalizeDiningId, getMealDefaultField } = require('../../config/dining');
+const { DELIVERY_LOCATIONS, normalizeDeliveryLocation } = require('../../config/delivery');
 
 const VALID_ROLES = ['admin', 'manager', 'member', 'moderator', 'staff', 'super_admin'];
 
@@ -26,6 +27,7 @@ const createUser = async (req, res) => {
       role: 'member',
       isActive: true,
       mealDefaultOffice: false,
+      defaultDeliveryLocation: null,
       fixedDeposit: 0,
       mosqueFee: 0,
       createdAt: new Date(),
@@ -78,6 +80,17 @@ const updateUserProfile = async (req, res) => {
     if (mobile) updateData.mobile = mobile;
     if (designation !== undefined) updateData.designation = designation;
     if (department !== undefined) updateData.department = department;
+    if (req.body.defaultDeliveryLocation !== undefined) {
+      const defaultDeliveryLocation = req.body.defaultDeliveryLocation === null
+        ? null
+        : normalizeDeliveryLocation(req.body.defaultDeliveryLocation);
+
+      if (defaultDeliveryLocation !== null && !DELIVERY_LOCATIONS.includes(defaultDeliveryLocation)) {
+        return res.status(400).json({ error: `defaultDeliveryLocation must be one of: ${DELIVERY_LOCATIONS.join(', ')}` });
+      }
+
+      updateData.defaultDeliveryLocation = defaultDeliveryLocation;
+    }
 
     const { users } = await getCollections();
     const result = await users.findOneAndUpdate(

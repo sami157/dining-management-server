@@ -1,5 +1,5 @@
 const express = require('express');
-const { generateSchedules, getSchedules, updateSchedule, bulkUpdateSchedules, getAllRegistrations, deleteSchedule } = require('./managers.controller');
+const { generateSchedules, getSchedules, updateSchedule, bulkUpdateSchedules, getAllRegistrations, getDeliveryRequests, deleteSchedule } = require('./managers.controller');
 const verifyFirebaseToken = require('../../middleware/verifyFirebaseToken');
 const router = express.Router();
 
@@ -17,5 +17,8 @@ router.delete('/schedules/:scheduleId', verifyFirebaseToken('admin,super_admin')
 
 // Get all registrations for a date range
 router.get('/registrations', getAllRegistrations);
+
+// Get delivery requests for a date range
+router.get('/delivery-requests', verifyFirebaseToken('admin,manager,super_admin'), getDeliveryRequests);
 
 module.exports = router;

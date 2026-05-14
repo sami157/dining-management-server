@@ -8,9 +8,19 @@ async function backfillDiningMetadata() {
     { $set: { mealDefaultOffice: false, updatedAt: new Date() } }
   );
 
+  const userDeliveryDefaultsResult = await users.updateMany(
+    { defaultDeliveryLocation: { $exists: false } },
+    { $set: { defaultDeliveryLocation: null, updatedAt: new Date() } }
+  );
+
   const registrationsResult = await mealRegistrations.updateMany(
     { diningId: { $exists: false } },
     { $set: { diningId: 'township' } }
+  );
+
+  const registrationCategoriesResult = await mealRegistrations.updateMany(
+    { mealCategory: { $exists: false } },
+    { $set: { mealCategory: 'basic' } }
   );
 
   const expensesResult = await expenses.updateMany(
@@ -47,9 +57,17 @@ async function backfillDiningMetadata() {
       matched: usersResult.matchedCount,
       modified: usersResult.modifiedCount
     },
+    userDeliveryDefaults: {
+      matched: userDeliveryDefaultsResult.matchedCount,
+      modified: userDeliveryDefaultsResult.modifiedCount
+    },
     mealRegistrations: {
       matched: registrationsResult.matchedCount,
       modified: registrationsResult.modifiedCount
+    },
+    mealRegistrationCategories: {
+      matched: registrationCategoriesResult.matchedCount,
+      modified: registrationCategoriesResult.modifiedCount
     },
     expenses: {
       matched: expensesResult.matchedCount,

@@ -1,6 +1,9 @@
 const { ObjectId } = require('mongodb');
 const { getCollections } = require('../../config/connectMongodb');
 const { DINING_IDS, DEFAULT_DINING_ID, normalizeDiningId, getMealDefaultField } = require('../../config/dining');
+const { DELIVERY_LOCATIONS, normalizeDeliveryLocation } = require('../../config/delivery');
+
+const DEFAULT_MEAL_CATEGORY = 'basic';
 
 // Helper function to check if a date is weekend (Fri or Sat)
 const isWeekend = (date) => {
@@ -68,7 +71,7 @@ const generateSchedules = async (req, res) => {
       return res.status(400).json({ error: 'Date range cannot exceed 90 days' });
     }
 
-    const { mealSchedules, mealRegistrations, users } = await getCollections();
+    const { mealSchedules, mealRegistrations, mealDeliveryRequests, users } = await getCollections();
 
     // Fetch existing schedules and default users for both dining locations in parallel.
     const [existingSchedules, townshipDefaultUsers, officeDefaultUsers] = await Promise.all([
@@ -136,6 +139,7 @@ const generateSchedules = async (req, res) => {
             date: schedule.date,
             diningId: meal.diningId,
             mealType: meal.mealType,
+            mealCategory: DEFAULT_MEAL_CATEGORY,
             numberOfMeals: 1,
             registeredAt: new Date()
           });
@@ -279,6 +283,10 @@ const updateSchedule = async (req, res) => {
         date: result.date,
         mealType: { $in: mealsToClear }
       });
+      await mealDeliveryRequests.deleteMany({
+        date: result.date,
+        mealType: { $in: mealsToClear }
+      });
     }
 
     const mealsToMove = normalizedAvailableMeals
@@ -295,6 +303,10 @@ const updateSchedule = async (req, res) => {
 
     for (const meal of mealsToMove) {
       const moveResult = await mealRegistrations.updateMany(
+        { date: result.date, mealType: meal.mealType },
+        { $set: { diningId: meal.diningId, updatedAt: new Date() } }
+      );
+      await mealDeliveryRequests.updateMany(
         { date: result.date, mealType: meal.mealType },
         { $set: { diningId: meal.diningId, updatedAt: new Date() } }
       );
@@ -347,6 +359,7 @@ const updateSchedule = async (req, res) => {
               date: result.date,
               diningId: meal.diningId,
               mealType: meal.mealType,
+              mealCategory: DEFAULT_MEAL_CATEGORY,
               numberOfMeals: 1,
               registeredAt: new Date()
             });
@@ -431,7 +444,7 @@ const deleteSchedule = async (req, res) => {
       return res.status(400).json({ error: 'Invalid schedule ID' });
     }
 
-    const { mealSchedules, mealRegistrations } = await getCollections();
+    const { mealSchedules, mealRegistrations, mealDeliveryRequests } = await getCollections();
 
     const schedule = await mealSchedules.findOneAndDelete({
       _id: new ObjectId(scheduleId)
@@ -442,6 +455,9 @@ const deleteSchedule = async (req, res) => {
     }
 
     const { deletedCount } = await mealRegistrations.deleteMany({
+      date: schedule.date
+    });
+    await mealDeliveryRequests.deleteMany({
       date: schedule.date
     });
 
@@ -500,6 +516,7 @@ const getAllRegistrations = async (req, res) => {
 
     const enrichedRegistrations = registrations.map(reg => ({
       ...reg,
+      mealCategory: reg.mealCategory || DEFAULT_MEAL_CATEGORY,
       user: usersMap[reg.userId] || null
     }));
 
@@ -516,11 +533,75 @@ const getAllRegistrations = async (req, res) => {
   }
 };
 
+const getDeliveryRequests = async (req, res) => {
+  try {
+    const { startDate, endDate } = req.query;
+    const diningId = req.query.diningId ? normalizeDiningId(req.query.diningId) : null;
+    const deliveryLocation = req.query.deliveryLocation ? normalizeDeliveryLocation(req.query.deliveryLocation) : null;
+
+    if (!startDate || !endDate) {
+      return res.status(400).json({ error: 'startDate and endDate query parameters are required' });
+    }
+
+    const start = new Date(startDate);
+    const end = new Date(endDate);
+
+    if (start > end) {
+      return res.status(400).json({ error: 'startDate must be before endDate' });
+    }
+
+    if (diningId && !DINING_IDS.includes(diningId)) {
+      return res.status(400).json({ error: `diningId must be one of: ${DINING_IDS.join(', ')}` });
+    }
+
+    if (deliveryLocation && !DELIVERY_LOCATIONS.includes(deliveryLocation)) {
+      return res.status(400).json({ error: `deliveryLocation must be one of: ${DELIVERY_LOCATIONS.join(', ')}` });
+    }
+
+    const query = { date: { $gte: start, $lte: end } };
+    if (diningId) query.diningId = diningId;
+    if (deliveryLocation) query.deliveryLocation = deliveryLocation;
+
+    const { mealDeliveryRequests, users } = await getCollections();
+    const deliveryRequests = await mealDeliveryRequests
+      .find(query)
+      .sort({ date: 1, deliveryLocation: 1, diningId: 1, mealType: 1 })
+      .toArray();
+
+    const userIds = [...new Set(deliveryRequests.map(request => request.userId?.toString()).filter(id => id && ObjectId.isValid(id)))]
+      .map(id => new ObjectId(id));
+    const usersMap = {};
+
+    if (userIds.length > 0) {
+      const usersList = await users.find({ _id: { $in: userIds } }).toArray();
+      usersList.forEach(user => {
+        usersMap[user._id.toString()] = { name: user.name, email: user.email, room: user.room, building: user.building };
+      });
+    }
+
+    const enrichedRequests = deliveryRequests.map(request => ({
+      ...request,
+      user: usersMap[request.userId?.toString()] || null
+    }));
+
+    return res.status(200).json({
+      count: enrichedRequests.length,
+      startDate,
+      endDate,
+      deliveryRequests: enrichedRequests
+    });
+  } catch (error) {
+    console.error('Error fetching delivery requests:', error);
+    return res.status(500).json({ error: 'Failed to fetch delivery requests' });
+  }
+};
+
 module.exports = {
   generateSchedules,
   getSchedules,
   updateSchedule,
   bulkUpdateSchedules,
   getAllRegistrations,
+  getDeliveryRequests,
   deleteSchedule
 };

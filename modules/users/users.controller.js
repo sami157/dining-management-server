@@ -1,6 +1,7 @@
 const { ObjectId } = require('mongodb');
 const { getCollections } = require('../../config/connectMongodb');
 const { DINING_IDS, normalizeDiningId } = require('../../config/dining');
+const { DELIVERY_LOCATIONS, normalizeDeliveryLocation } = require('../../config/delivery');
 const { DateTime } = require('luxon');
 
 // Default deadline rules
@@ -9,6 +10,11 @@ const MEAL_DEADLINES = {
   evening: { hours: 8, dayOffset: 0 },  // Same day 8 AM
   night: { hours: 14, dayOffset: 0 }     // Same day 2 PM
 };
+
+const MEAL_CATEGORIES = ['basic', 'alternative'];
+const DEFAULT_MEAL_CATEGORY = 'basic';
+
+const normalizeMealCategory = (mealCategory = DEFAULT_MEAL_CATEGORY) => String(mealCategory).trim().toLowerCase();
 
 // Helper function to calculate deadline for a meal
 const calculateDeadline = (mealDate, mealType, customDeadline) => {
@@ -53,12 +59,21 @@ const getAvailableMeals = async (req, res) => {
       end.setHours(23, 59, 59, 999);
     }
 
-    const { mealSchedules, mealRegistrations } = await getCollections();
+    const { mealSchedules, mealRegistrations, mealDeliveryRequests } = await getCollections();
 
     const [schedules, userRegistrations] = await Promise.all([
       mealSchedules.find({ date: { $gte: start, $lte: end } }).sort({ date: 1 }).toArray(),
       mealRegistrations.find({ userId, date: { $gte: start, $lte: end } }).toArray()
     ]);
+
+    const registrationIds = userRegistrations.map(registration => registration._id);
+    const deliveryRequests = registrationIds.length > 0
+      ? await mealDeliveryRequests.find({ registrationId: { $in: registrationIds } }).toArray()
+      : [];
+    const deliveryRequestMap = {};
+    deliveryRequests.forEach((request) => {
+      deliveryRequestMap[request.registrationId.toString()] = request;
+    });
 
     const registrationMap = {};
     userRegistrations.forEach(reg => {
@@ -74,6 +89,7 @@ const getAvailableMeals = async (req, res) => {
         const registrationKey = `${schedule.date.toISOString().split('T')[0]}_${meal.mealType}_${diningId}`;
         const existingRegistration = registrationMap[registrationKey];
         const isRegistered = !!existingRegistration;
+        const deliveryRequest = isRegistered ? deliveryRequestMap[existingRegistration._id.toString()] : null;
 
         return {
           mealType: meal.mealType,
@@ -85,7 +101,14 @@ const getAvailableMeals = async (req, res) => {
           canRegister: meal.isAvailable && !isDeadlinePassed && !isRegistered,
           isRegistered,
           registrationId: isRegistered ? existingRegistration._id : null,
-          numberOfMeals: isRegistered ? existingRegistration.numberOfMeals || 1 : null
+          numberOfMeals: isRegistered ? existingRegistration.numberOfMeals || 1 : null,
+          mealCategory: isRegistered ? normalizeMealCategory(existingRegistration.mealCategory) : null,
+          deliveryRequest: deliveryRequest ? {
+            _id: deliveryRequest._id,
+            deliveryLocation: deliveryRequest.deliveryLocation,
+            requestedAt: deliveryRequest.requestedAt,
+            updatedAt: deliveryRequest.updatedAt || null
+          } : null
         };
       });
 
@@ -104,6 +127,7 @@ const registerMeal = async (req, res) => {
   try {
     const { date, mealType, userId: requestUserId, numberOfMeals } = req.body;
     const diningId = normalizeDiningId(req.body?.diningId);
+    const mealCategory = normalizeMealCategory(req.body?.mealCategory);
     let userId = req.user?._id;
     let isLateRegistration = false
     const currentTime = new Date();
@@ -125,6 +149,10 @@ const registerMeal = async (req, res) => {
 
     if (!DINING_IDS.includes(diningId)) {
       return res.status(400).json({ error: `diningId must be one of: ${DINING_IDS.join(', ')}` });
+    }
+
+    if (!MEAL_CATEGORIES.includes(mealCategory)) {
+      return res.status(400).json({ error: `mealCategory must be one of: ${MEAL_CATEGORIES.join(', ')}` });
     }
 
     const mealDate = new Date(date);
@@ -158,6 +186,7 @@ const registerMeal = async (req, res) => {
       date: mealDate,
       diningId,
       mealType,
+      mealCategory,
       numberOfMeals: numberOfMeals || 1,
       registeredAt: new Date()
     };
@@ -207,14 +236,23 @@ const updateMealRegistration = async (req, res) => {
   try {
     const { registrationId } = req.params;
     const { numberOfMeals } = req.body;
+    const mealCategory = req.body?.mealCategory !== undefined ? normalizeMealCategory(req.body.mealCategory) : undefined;
     const userId = req.user?._id;
 
     if (!ObjectId.isValid(registrationId)) {
       return res.status(400).json({ error: 'Invalid registration ID' });
     }
 
-    if (!numberOfMeals || typeof numberOfMeals !== 'number' || numberOfMeals < 1) {
+    if (numberOfMeals !== undefined && (typeof numberOfMeals !== 'number' || numberOfMeals < 1)) {
       return res.status(400).json({ error: 'numberOfMeals must be a positive number' });
+    }
+
+    if (mealCategory !== undefined && !MEAL_CATEGORIES.includes(mealCategory)) {
+      return res.status(400).json({ error: `mealCategory must be one of: ${MEAL_CATEGORIES.join(', ')}` });
+    }
+
+    if (numberOfMeals === undefined && mealCategory === undefined) {
+      return res.status(400).json({ error: 'numberOfMeals or mealCategory is required' });
     }
 
     const { mealRegistrations, mealSchedules } = await getCollections();
@@ -248,9 +286,13 @@ const updateMealRegistration = async (req, res) => {
       }
     }
 
+    const updateData = { updatedAt: new Date() };
+    if (numberOfMeals !== undefined) updateData.numberOfMeals = numberOfMeals;
+    if (mealCategory !== undefined) updateData.mealCategory = mealCategory;
+
     await mealRegistrations.updateOne(
       { _id: new ObjectId(registrationId) },
-      { $set: { numberOfMeals, updatedAt: new Date() } }
+      { $set: updateData }
     );
 
     return res.status(200).json({ message: 'Registration updated successfully' });
@@ -270,7 +312,7 @@ const cancelMealRegistration = async (req, res) => {
       return res.status(400).json({ error: 'Invalid registration ID' });
     }
 
-    const { users, mealRegistrations, mealSchedules, systemLogs } = await getCollections();
+    const { users, mealRegistrations, mealSchedules, mealDeliveryRequests, systemLogs } = await getCollections();
 
     const user = await users.findOne({ _id: userId });
 
@@ -326,12 +368,98 @@ const cancelMealRegistration = async (req, res) => {
     }
 
     await mealRegistrations.deleteOne({ _id: new ObjectId(registrationId) });
+    await mealDeliveryRequests.deleteOne({ registrationId: new ObjectId(registrationId) });
 
     return res.status(200).json({ message: 'Meal registration cancelled successfully' });
 
   } catch (error) {
     console.error('Error cancelling meal registration:', error);
     return res.status(500).json({ error: 'Failed to cancel meal registration' });
+  }
+};
+
+const requestMealDelivery = async (req, res) => {
+  try {
+    const { registrationId } = req.params;
+    const deliveryLocation = normalizeDeliveryLocation(req.body?.deliveryLocation);
+    const userId = req.user?._id;
+
+    if (!ObjectId.isValid(registrationId)) {
+      return res.status(400).json({ error: 'Invalid registration ID' });
+    }
+
+    if (!DELIVERY_LOCATIONS.includes(deliveryLocation)) {
+      return res.status(400).json({ error: `deliveryLocation must be one of: ${DELIVERY_LOCATIONS.join(', ')}` });
+    }
+
+    const { mealRegistrations, mealDeliveryRequests } = await getCollections();
+    const registration = await mealRegistrations.findOne({ _id: new ObjectId(registrationId) });
+
+    if (!registration) {
+      return res.status(404).json({ error: 'Registration not found' });
+    }
+
+    if (!registration.userId.equals(userId) && req.user.role !== 'admin' && req.user.role !== 'super_admin') {
+      return res.status(403).json({ error: 'You can only request delivery for your own registration' });
+    }
+
+    const now = new Date();
+    const deliveryRequest = {
+      registrationId: registration._id,
+      userId: registration.userId,
+      date: registration.date,
+      diningId: normalizeDiningId(registration.diningId),
+      mealType: registration.mealType,
+      deliveryLocation,
+      requestedAt: now,
+      updatedAt: now
+    };
+
+    const result = await mealDeliveryRequests.findOneAndUpdate(
+      { registrationId: registration._id },
+      { $set: deliveryRequest, $setOnInsert: { createdAt: now } },
+      { upsert: true, returnDocument: 'after' }
+    );
+
+    return res.status(200).json({
+      message: 'Meal delivery request saved successfully',
+      deliveryRequest: result
+    });
+  } catch (error) {
+    console.error('Error requesting meal delivery:', error);
+    return res.status(500).json({ error: 'Failed to request meal delivery' });
+  }
+};
+
+const cancelMealDeliveryRequest = async (req, res) => {
+  try {
+    const { registrationId } = req.params;
+    const userId = req.user?._id;
+
+    if (!ObjectId.isValid(registrationId)) {
+      return res.status(400).json({ error: 'Invalid registration ID' });
+    }
+
+    const { mealRegistrations, mealDeliveryRequests } = await getCollections();
+    const registration = await mealRegistrations.findOne({ _id: new ObjectId(registrationId) });
+
+    if (!registration) {
+      return res.status(404).json({ error: 'Registration not found' });
+    }
+
+    if (!registration.userId.equals(userId) && req.user.role !== 'admin' && req.user.role !== 'super_admin') {
+      return res.status(403).json({ error: 'You can only cancel delivery for your own registration' });
+    }
+
+    const result = await mealDeliveryRequests.deleteOne({ registrationId: registration._id });
+
+    return res.status(200).json({
+      message: 'Meal delivery request cancelled successfully',
+      deletedCount: result.deletedCount
+    });
+  } catch (error) {
+    console.error('Error cancelling meal delivery request:', error);
+    return res.status(500).json({ error: 'Failed to cancel meal delivery request' });
   }
 };
 
@@ -488,6 +616,7 @@ const bulkToggleMealsForUser = async (req, res) => {
           date: schedule.date,
           diningId,
           mealType: meal.mealType,
+          mealCategory: DEFAULT_MEAL_CATEGORY,
           numberOfMeals: 1,
           registeredAt: new Date(),
         });
@@ -519,6 +648,8 @@ module.exports = {
   registerMeal,
   updateMealRegistration,
   cancelMealRegistration,
+  requestMealDelivery,
+  cancelMealDeliveryRequest,
   getMyRegistrations,
   getTotalMealsForUser,
   bulkToggleMealsForUser

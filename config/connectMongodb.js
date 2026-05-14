@@ -39,6 +39,7 @@ const getCollections = async () => {
         monthlyFinalization: db.collection('monthlyFinalization'),
         systemLogs: db.collection('systemLogs'),
         passwordRecoveryCodes: db.collection('passwordRecoveryCodes'),
+        mealDeliveryRequests: db.collection('mealDeliveryRequests'),
     };
 };
 
