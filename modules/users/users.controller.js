@@ -13,6 +13,7 @@ const MEAL_DEADLINES = {
 
 const MEAL_CATEGORIES = ['basic', 'alternative'];
 const DEFAULT_MEAL_CATEGORY = 'basic';
+const ALTERNATIVE_UNAVAILABLE_ERROR = 'Alternative is not available for this meal';
 
 const normalizeMealCategory = (mealCategory = DEFAULT_MEAL_CATEGORY) => String(mealCategory).trim().toLowerCase();
 
@@ -97,6 +98,7 @@ const getAvailableMeals = async (req, res) => {
           isAvailable: meal.isAvailable,
           menu: meal.menu || '',
           weight: meal.weight || 1,
+          allowAlt: meal.allowAlt === true,
           deadline,
           canRegister: meal.isAvailable && !isDeadlinePassed && !isRegistered,
           isRegistered,
@@ -167,6 +169,10 @@ const registerMeal = async (req, res) => {
     const meal = schedule.availableMeals.find(m => m.mealType === mealType && normalizeDiningId(m.diningId) === diningId);
     if (!meal || !meal.isAvailable) {
       return res.status(400).json({ error: 'This meal is not available at this dining location on this date' });
+    }
+
+    if (mealCategory === 'alternative' && meal.allowAlt !== true) {
+      return res.status(400).json({ error: ALTERNATIVE_UNAVAILABLE_ERROR });
     }
 
     if (!requestUserId) {
@@ -266,20 +272,29 @@ const updateMealRegistration = async (req, res) => {
       return res.status(403).json({ error: 'You can only update your own registration' });
     }
 
-    if (req.user.role !== 'admin' && req.user.role !== 'super_admin') {
+    const shouldLoadSchedule = mealCategory === 'alternative' || (req.user.role !== 'admin' && req.user.role !== 'super_admin');
+    let mealConfig;
+
+    if (shouldLoadSchedule) {
       const schedule = await mealSchedules.findOne({ date: registration.date });
       if (!schedule) {
         return res.status(404).json({ error: 'Meal schedule not found for this date' });
       }
 
       const registrationDiningId = normalizeDiningId(registration.diningId);
-      const mealConfig = schedule.availableMeals.find(
+      mealConfig = schedule.availableMeals.find(
         m => m.mealType === registration.mealType && normalizeDiningId(m.diningId) === registrationDiningId
       );
       if (!mealConfig || !mealConfig.isAvailable) {
         return res.status(400).json({ error: 'Meal is no longer available for modification' });
       }
+    }
 
+    if (mealCategory === 'alternative' && mealConfig.allowAlt !== true) {
+      return res.status(400).json({ error: ALTERNATIVE_UNAVAILABLE_ERROR });
+    }
+
+    if (req.user.role !== 'admin' && req.user.role !== 'super_admin') {
       const deadline = calculateDeadline(new Date(registration.date), registration.mealType, mealConfig.customDeadline);
       if (new Date() > deadline) {
         return res.status(400).json({ error: 'Deadline has passed. Changes are no longer allowed.' });

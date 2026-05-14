@@ -44,7 +44,8 @@ Generated schedules now look like this:
       "diningId": "office",
       "customDeadline": null,
       "weight": 0.5,
-      "menu": ""
+      "menu": "",
+      "allowAlt": false
     },
     {
       "mealType": "evening",
@@ -52,7 +53,8 @@ Generated schedules now look like this:
       "diningId": "office",
       "customDeadline": null,
       "weight": 1,
-      "menu": ""
+      "menu": "",
+      "allowAlt": true
     },
     {
       "mealType": "night",
@@ -60,7 +62,8 @@ Generated schedules now look like this:
       "diningId": "township",
       "customDeadline": null,
       "weight": 1,
-      "menu": ""
+      "menu": "",
+      "allowAlt": false
     }
   ]
 }
@@ -83,6 +86,7 @@ GET /users/meals/available?startDate=2026-06-01&endDate=2026-06-07
 ```
 
 Each meal in the response now includes `diningId`.
+Each meal also includes `allowAlt`, which controls whether users can choose the `alternative` meal category.
 
 Example:
 
@@ -100,6 +104,7 @@ Example:
           "isAvailable": true,
           "menu": "",
           "weight": 0.5,
+          "allowAlt": false,
           "deadline": "2026-06-06T16:00:00.000Z",
           "canRegister": true,
           "isRegistered": false,
@@ -154,6 +159,14 @@ Admin registering for another user:
 Response includes `diningId` inside `registration`.
 
 `mealCategory` is optional and defaults to `basic`.
+Requests with `"mealCategory": "alternative"` only succeed when the schedule meal has `"allowAlt": true`.
+Otherwise the backend returns:
+
+```json
+{
+  "error": "Alternative is not available for this meal"
+}
+```
 
 Allowed values:
 
@@ -206,7 +219,7 @@ The same endpoint can still update `numberOfMeals`:
 Frontend changes:
 
 - Show a basic/alternative control for registered meals.
-- Only show or enable this control after the meal is registered.
+- Only show or enable this control after the meal is registered and the meal has `allowAlt: true`.
 - Display alternative registrations clearly in manager registration views.
 
 ## Meal Defaults
@@ -267,7 +280,7 @@ Endpoint:
 PUT /managers/schedules/:scheduleId
 ```
 
-When editing `availableMeals`, include `diningId` per meal:
+When editing `availableMeals`, include `diningId` per meal. Use `allowAlt: true` only when users are allowed to choose the alternative meal for that schedule meal:
 
 ```json
 {
@@ -278,7 +291,8 @@ When editing `availableMeals`, include `diningId` per meal:
       "diningId": "office",
       "weight": 0.5,
       "customDeadline": null,
-      "menu": ""
+      "menu": "",
+      "allowAlt": false
     },
     {
       "mealType": "evening",
@@ -286,7 +300,8 @@ When editing `availableMeals`, include `diningId` per meal:
       "diningId": "office",
       "weight": 1,
       "customDeadline": null,
-      "menu": ""
+      "menu": "",
+      "allowAlt": true
     },
     {
       "mealType": "night",
@@ -294,7 +309,8 @@ When editing `availableMeals`, include `diningId` per meal:
       "diningId": "township",
       "weight": 1,
       "customDeadline": null,
-      "menu": ""
+      "menu": "",
+      "allowAlt": false
     }
   ]
 }
@@ -305,10 +321,12 @@ Important behavior:
 - If a meal's `diningId` is changed, existing registrations for that date and meal follow the new `diningId`.
 - If a meal is made unavailable, existing registrations for that date and meal are deleted.
 - If an unavailable meal becomes available, default users for that meal's dining location are auto-registered.
+- Missing `allowAlt` is treated as `false`.
 
 Frontend changes:
 
 - Add a location selector for each meal row in schedule editing.
+- Add an `allowAlt` toggle for each meal row in schedule editing.
 - Do not add a top-level schedule location selector.
 
 ## Expenses

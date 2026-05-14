@@ -29,11 +29,10 @@ async function backfillDiningMetadata() {
   );
 
   const schedules = await mealSchedules.find({
-    availableMeals: {
-      $elemMatch: {
-        diningId: { $exists: false }
-      }
-    }
+    $or: [
+      { 'availableMeals.diningId': { $exists: false } },
+      { 'availableMeals.allowAlt': { $exists: false } }
+    ]
   }).toArray();
 
   let schedulesModified = 0;
@@ -41,7 +40,8 @@ async function backfillDiningMetadata() {
   for (const schedule of schedules) {
     const availableMeals = (schedule.availableMeals || []).map((meal) => ({
       ...meal,
-      diningId: meal.diningId || 'township'
+      diningId: meal.diningId || 'township',
+      allowAlt: meal.allowAlt === true
     }));
 
     const result = await mealSchedules.updateOne(

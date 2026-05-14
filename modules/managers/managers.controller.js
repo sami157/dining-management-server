@@ -17,8 +17,23 @@ const buildDiningMeal = (mealType, diningId, weight) => ({
   diningId,
   customDeadline: null,
   weight,
-  menu: ''
+  menu: '',
+  allowAlt: false
 });
+
+const normalizeScheduleMeal = (meal, previousMeal = {}) => {
+  const diningId = normalizeDiningId(meal.diningId || previousMeal.diningId);
+
+  return {
+    mealType: meal.mealType,
+    isAvailable: meal.isAvailable,
+    diningId,
+    customDeadline: meal.customDeadline || null,
+    weight: meal.isAvailable ? (meal.weight !== undefined ? meal.weight : 1) : 0,
+    menu: meal.menu || '',
+    allowAlt: meal.allowAlt !== undefined ? meal.allowAlt === true : previousMeal.allowAlt === true
+  };
+};
 
 // Helper function to get the full daily meal pattern. The schedule is common,
 // and each meal carries the dining location where it will be served.
@@ -220,7 +235,7 @@ const updateSchedule = async (req, res) => {
       updateData.isHoliday = isHoliday;
     }
 
-    const { mealSchedules, mealRegistrations, users } = await getCollections();
+    const { mealSchedules, mealRegistrations, mealDeliveryRequests, users } = await getCollections();
     const existingSchedule = await mealSchedules.findOne({ _id: new ObjectId(scheduleId) });
 
     if (!existingSchedule) {
@@ -244,16 +259,7 @@ const updateSchedule = async (req, res) => {
 
       normalizedAvailableMeals = availableMeals.map(meal => {
         const previousMeal = previousMealsByType.get(meal.mealType);
-        const diningId = normalizeDiningId(meal.diningId || previousMeal?.diningId);
-
-        return {
-          mealType: meal.mealType,
-          isAvailable: meal.isAvailable,
-          diningId,
-          customDeadline: meal.customDeadline || null,
-          weight: meal.isAvailable ? (meal.weight !== undefined ? meal.weight : 1) : 0,
-          menu: meal.menu || ''
-        };
+        return normalizeScheduleMeal(meal, previousMeal);
       });
       updateData.availableMeals = normalizedAvailableMeals;
     }
@@ -410,7 +416,14 @@ const bulkUpdateSchedules = async (req, res) => {
       const updateData = { updatedAt: new Date() };
 
       if (isHoliday !== undefined) updateData.isHoliday = isHoliday;
-      if (availableMeals) updateData.availableMeals = availableMeals;
+      if (availableMeals) {
+        if (!Array.isArray(availableMeals)) {
+          errors.push({ scheduleId, error: 'availableMeals must be an array' });
+          continue;
+        }
+
+        updateData.availableMeals = availableMeals.map(meal => normalizeScheduleMeal(meal));
+      }
 
       updatePromises.push(
         mealSchedules.updateOne(
