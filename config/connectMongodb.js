@@ -22,7 +22,7 @@ const connectMongoDB = async () => {
     });
 
     await client.connect();
-    dbInstance = client.db('diningManagementDB');
+    dbInstance = client.db('test-DiningManagementDB');
     return dbInstance;
 };
 
