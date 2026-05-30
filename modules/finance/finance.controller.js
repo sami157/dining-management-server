@@ -1,6 +1,16 @@
 const { ObjectId } = require('mongodb');
-const { format } = require('date-fns');
-const { getCollections } = require('../../config/connectMongodb');
+const { getCollections, getMongoClient } = require('../../config/connectMongodb');
+const {
+  allocateMealCosts,
+  assertMonthIsOpen,
+  calculateWeightedMeals,
+  fromCents,
+  getMonthFromDate,
+  getUtcMonthRange,
+  round2,
+  toCents,
+  validateMonth,
+} = require('./accounting.utils');
 
 const addDeposit = async (req, res) => {
   try {
@@ -15,12 +25,15 @@ const addDeposit = async (req, res) => {
       return res.status(400).json({ error: 'amount must be a positive number' });
     }
 
-    const monthRegex = /^\d{4}-(0[1-9]|1[0-2])$/;
-    if (!monthRegex.test(month)) {
+    if (!validateMonth(month)) {
       return res.status(400).json({ error: 'month must be in YYYY-MM format (e.g., 2025-01)' });
     }
 
-    const { users, deposits, memberBalances } = await getCollections();
+    const { users, deposits, memberBalances, monthlyFinalization } = await getCollections();
+
+    if (!await assertMonthIsOpen(monthlyFinalization, month)) {
+      return res.status(400).json({ error: 'Cannot add deposit - month is already finalized' });
+    }
 
     const user = await users.findOne({ _id: new ObjectId(userId), isActive: { $ne: false } });
     if (!user) {
@@ -29,7 +42,7 @@ const addDeposit = async (req, res) => {
 
     const deposit = {
       userId,
-      amount,
+      amount: round2(amount),
       month,
       depositDate: depositDate ? new Date(depositDate) : new Date(),
       notes: notes || '',
@@ -44,12 +57,12 @@ const addDeposit = async (req, res) => {
     if (existingBalance) {
       await memberBalances.updateOne(
         { userId },
-        { $inc: { balance: amount }, $set: { lastUpdated: new Date() } }
+        { $inc: { balance: round2(amount) }, $set: { lastUpdated: new Date() } }
       );
     } else {
       await memberBalances.insertOne({
         userId,
-        balance: amount,
+        balance: round2(amount),
         lastUpdated: new Date(),
         createdAt: new Date()
       });
@@ -112,12 +125,21 @@ const addExpense = async (req, res) => {
       return res.status(400).json({ error: 'amount must be a positive number' });
     }
 
-    const { expenses } = await getCollections();
+    const { expenses, monthlyFinalization } = await getCollections();
+    const expenseMonth = getMonthFromDate(date);
+
+    if (!expenseMonth) {
+      return res.status(400).json({ error: 'date must be a valid date string' });
+    }
+
+    if (!await assertMonthIsOpen(monthlyFinalization, expenseMonth)) {
+      return res.status(400).json({ error: 'Cannot add expense - month is already finalized' });
+    }
 
     const expense = {
       date: new Date(date),
       category,
-      amount,
+      amount: round2(amount),
       description: description || '',
       person: person || '',
       addedBy: managerId,
@@ -258,158 +280,192 @@ const finalizeMonth = async (req, res) => {
     const { month } = req.body;
     const managerId = req.user?._id;
 
-    const monthRegex = /^\d{4}-(0[1-9]|1[0-2])$/;
-    if (!month || !monthRegex.test(month)) {
+    if (!month || !validateMonth(month)) {
       return res.status(400).json({ error: 'month must be in YYYY-MM format (e.g., 2025-01)' });
     }
 
-    const {
-      users, mealRegistrations, mealSchedules,
-      deposits, memberBalances, expenses, monthlyFinalization
-    } = await getCollections();
+    const client = await getMongoClient();
+    const session = client.startSession();
+    let responsePayload;
 
-    const existingFinalization = await monthlyFinalization.findOne({ month });
-    if (existingFinalization) {
-      return res.status(400).json({ error: 'This month has already been finalized' });
-    }
+    try {
+      await session.withTransaction(async () => {
+        const collections = await getCollections();
+        const { deposits, memberBalances, expenses, monthlyFinalization } = collections;
+        const { startDate, endDate } = getUtcMonthRange(month);
 
-    const [year, monthNum] = month.split('-').map(Number);
-    const startDate = new Date(year, monthNum - 1, 1);
-    const endDate = new Date(year, monthNum, 0);
-    startDate.setHours(0, 0, 0, 0);
-    endDate.setHours(23, 59, 59, 999);
-
-    const [allUsers, allRegistrations, allSchedules, allDeposits, allBalances, monthExpenses] =
-      await Promise.all([
-        users.find({ isActive: { $ne: false } }).toArray(),
-        mealRegistrations.find({ date: { $gte: startDate, $lte: endDate } }).toArray(),
-        mealSchedules.find({ date: { $gte: startDate, $lte: endDate } }).toArray(),
-        deposits.find({ month }).toArray(),
-        memberBalances.find({}).toArray(),
-        expenses.find({ date: { $gte: startDate, $lte: endDate } }).toArray(),
-      ]);
-
-    const scheduleMap = {};
-    for (const schedule of allSchedules) {
-      scheduleMap[schedule.date.toISOString()] = schedule;
-    }
-
-    const registrationsByUser = {};
-    for (const reg of allRegistrations) {
-      if (!reg.userId) continue;
-      const uid = reg.userId.toString();
-      if (!registrationsByUser[uid]) registrationsByUser[uid] = [];
-      registrationsByUser[uid].push(reg);
-    }
-
-    // depositsByUser
-    const depositsByUser = {};
-    for (const dep of allDeposits) {
-      if (!dep.userId) continue;
-      const uid = dep.userId.toString();
-      depositsByUser[uid] = (depositsByUser[uid] || 0) + dep.amount;
-    }
-
-    // balanceByUser
-    const balanceByUser = {};
-    for (const b of allBalances) {
-      if (!b.userId) continue;
-      balanceByUser[b.userId.toString()] = b.balance || 0;
-    }
-
-    const totalExpenses = monthExpenses.reduce((sum, exp) => sum + exp.amount, 0);
-
-    const expenseBreakdown = {};
-    for (const exp of monthExpenses) {
-      expenseBreakdown[exp.category] = (expenseBreakdown[exp.category] || 0) + exp.amount;
-    }
-    const expenseBreakdownArray = Object.entries(expenseBreakdown).map(([category, amount]) => ({ category, amount }));
-
-    const userMealsMap = {};
-    let totalMealsServed = 0;
-
-    for (const user of allUsers) {
-      const userId = user._id.toString();
-      const userRegs = registrationsByUser[userId] || [];
-      let userTotalMeals = 0;
-
-      for (const reg of userRegs) {
-        const schedule = scheduleMap[reg.date.toISOString()];
-        if (schedule) {
-          const meal = schedule.availableMeals.find(m => m.mealType === reg.mealType);
-          const weight = meal?.weight || 1;
-          const numberOfMeals = reg.numberOfMeals || 1;
-          userTotalMeals += numberOfMeals * weight;
+        const existingFinalization = await monthlyFinalization.findOne({ month }, { session });
+        if (existingFinalization) {
+          const error = new Error('This month has already been finalized');
+          error.statusCode = 400;
+          throw error;
         }
-      }
 
-      userMealsMap[userId] = userTotalMeals;
-      totalMealsServed += userTotalMeals;
-    }
+        const mealTotals = await calculateWeightedMeals({ collections, month, session });
+        const dataQuality = mealTotals.dataQuality;
 
-    const mealRate = totalMealsServed > 0
-      ? parseFloat((totalExpenses / totalMealsServed).toFixed(2))
-      : 0;
-    const totalDeposits = Object.values(depositsByUser).reduce((sum, amt) => sum + amt, 0);
-    const totalFixedDeposit = allUsers.reduce((sum, user) => sum + (Number(user.fixedDeposit) || 0), 0);
-
-    const memberDetails = [];
-    const balanceUpdates = [];
-    const now = new Date();
-    let totalMosqueFee = 0;
-    let totalMemberBalancesAfterFinalization = 0;
-
-    for (const user of allUsers) {
-      const userId = user._id.toString();
-      const totalMeals = userMealsMap[userId] || 0;
-      const totalUserDeposits = depositsByUser[userId] || 0;
-      const mealCost = totalMeals * mealRate;
-      const previousBalance = balanceByUser[userId] || 0;
-      const mosqueFee = Number(user.mosqueFee) || 0;
-      const newBalance = previousBalance - mealCost - mosqueFee;
-      totalMosqueFee += mosqueFee;
-      totalMemberBalancesAfterFinalization += newBalance;
-
-      let status = 'paid';
-      if (newBalance < 0) status = 'due';
-      if (newBalance > 0) status = 'advance';
-
-      memberDetails.push({ userId, userName: user.name, totalMeals, totalDeposits: totalUserDeposits, mealCost, mosqueFee, previousBalance, newBalance, status });
-
-      balanceUpdates.push({
-        updateOne: {
-          filter: { userId },
-          update: { $set: { balance: newBalance, lastUpdated: now } },
-          upsert: true
+        if (
+          dataQuality.missingScheduleDocs > 0 ||
+          dataQuality.missingMealConfigDocs > 0 ||
+          dataQuality.duplicateRegistrationKeyCount > 0
+        ) {
+          const error = new Error('Cannot finalize month because meal registration data is inconsistent');
+          error.statusCode = 400;
+          error.details = dataQuality;
+          throw error;
         }
+
+        const [allDeposits, allBalances, monthExpenses] = await Promise.all([
+          deposits.find({ month }, { session }).toArray(),
+          memberBalances.find({}, { session }).toArray(),
+          expenses.find({ date: { $gte: startDate, $lte: endDate } }, { session }).toArray(),
+        ]);
+
+        const depositsByUserCents = {};
+        for (const dep of allDeposits) {
+          if (!dep.userId) continue;
+          const uid = dep.userId.toString();
+          depositsByUserCents[uid] = (depositsByUserCents[uid] || 0) + toCents(dep.amount);
+        }
+
+        const balanceByUser = {};
+        for (const balance of allBalances) {
+          if (!balance.userId) continue;
+          balanceByUser[balance.userId.toString()] = round2(balance.balance);
+        }
+
+        const totalExpenseCents = monthExpenses.reduce((sum, exp) => sum + toCents(exp.amount), 0);
+        const totalExpenses = fromCents(totalExpenseCents);
+
+        const expenseBreakdownCents = {};
+        for (const exp of monthExpenses) {
+          const category = exp.category || 'Uncategorized';
+          expenseBreakdownCents[category] = (expenseBreakdownCents[category] || 0) + toCents(exp.amount);
+        }
+        const expenseBreakdownArray = Object.entries(expenseBreakdownCents)
+          .map(([category, amountCents]) => ({ category, amount: fromCents(amountCents) }));
+
+        const totalMealsServed = mealTotals.totalMealsServed;
+        const mealRateExact = totalMealsServed > 0 ? totalExpenses / totalMealsServed : 0;
+        const mealRate = round2(mealRateExact);
+        const totalDeposits = fromCents(Object.values(depositsByUserCents).reduce((sum, amount) => sum + amount, 0));
+        const totalFixedDeposit = round2(mealTotals.activeUsers.reduce((sum, user) => sum + (Number(user.fixedDeposit) || 0), 0));
+
+        const membersForAllocation = mealTotals.activeUsers.map(user => {
+          const userId = user._id.toString();
+          return {
+            user,
+            userId,
+            userName: user.name,
+            totalMeals: mealTotals.userMealsMap.get(userId) || 0,
+            totalDeposits: fromCents(depositsByUserCents[userId] || 0),
+            previousBalance: balanceByUser[userId] || 0,
+            mosqueFee: round2(user.mosqueFee),
+          };
+        });
+
+        const allocationResult = allocateMealCosts(membersForAllocation, totalExpenses, totalMealsServed);
+        const mealCostByUser = new Map(allocationResult.allocations.map(item => [item.userId, item.mealCost]));
+
+        const memberDetails = [];
+        const balanceUpdates = [];
+        const now = new Date();
+        let totalMosqueFeeCents = 0;
+        let totalMemberBalancesAfterFinalizationCents = 0;
+
+        for (const member of membersForAllocation) {
+          const mealCost = mealCostByUser.get(member.userId) || 0;
+          const newBalance = round2(member.previousBalance - mealCost - member.mosqueFee);
+          totalMosqueFeeCents += toCents(member.mosqueFee);
+          totalMemberBalancesAfterFinalizationCents += toCents(newBalance);
+
+          let status = 'paid';
+          if (newBalance < 0) status = 'due';
+          if (newBalance > 0) status = 'advance';
+
+          memberDetails.push({
+            userId: member.userId,
+            userName: member.userName,
+            totalMeals: member.totalMeals,
+            totalDeposits: member.totalDeposits,
+            mealCost,
+            mosqueFee: member.mosqueFee,
+            previousBalance: member.previousBalance,
+            newBalance,
+            status,
+          });
+
+          balanceUpdates.push({
+            updateOne: {
+              filter: { userId: member.userId },
+              update: { $set: { balance: newBalance, lastUpdated: now } },
+              upsert: true
+            }
+          });
+        }
+
+        if (balanceUpdates.length > 0) {
+          await memberBalances.bulkWrite(balanceUpdates, { session });
+        }
+
+        const totalMosqueFee = fromCents(totalMosqueFeeCents);
+        const totalMemberBalancesAfterFinalization = fromCents(totalMemberBalancesAfterFinalizationCents);
+
+        const finalizationRecord = {
+          month, finalizedAt: now, finalizedBy: managerId,
+          totalMembers: mealTotals.activeUsers.length, totalMealsServed, totalDeposits,
+          totalFixedDeposit, totalMosqueFee, totalMemberBalancesAfterFinalization,
+          totalExpenses, mealRate, mealRateExact,
+          totalMealCost: allocationResult.totalMealCost,
+          mealCostRoundingAdjustment: allocationResult.roundingAdjustment,
+          memberDetails,
+          expenseBreakdown: expenseBreakdownArray,
+          accountingAudit: {
+            allocationMethod: 'largest-remainder-cents',
+            dateRange: { startDate, endDate },
+            timezone: 'UTC',
+            mealRateRounded: mealRate,
+            mealRateExact,
+            totalExpenseCents,
+            totalMealCostCents: toCents(allocationResult.totalMealCost),
+            sourceCounts: {
+              ...dataQuality,
+              expenseDocs: monthExpenses.length,
+              depositDocs: allDeposits.length,
+              balanceDocs: allBalances.length,
+            },
+          },
+          isFinalized: true,
+          notes: ''
+        };
+
+        const result = await monthlyFinalization.insertOne(finalizationRecord, { session });
+
+        responsePayload = {
+          message: 'Month finalized successfully',
+          finalizationId: result.insertedId,
+          summary: {
+            month, totalMembers: mealTotals.activeUsers.length, totalMealsServed,
+            totalDeposits, totalFixedDeposit, totalMosqueFee,
+            totalMemberBalancesAfterFinalization, totalExpenses, mealRate,
+            totalMealCost: allocationResult.totalMealCost,
+            mealCostRoundingAdjustment: allocationResult.roundingAdjustment,
+          }
+        };
       });
+    } finally {
+      await session.endSession();
     }
 
-    if (balanceUpdates.length > 0) {
-      await memberBalances.bulkWrite(balanceUpdates);
-    }
-
-    const finalizationRecord = {
-      month, finalizedAt: now, finalizedBy: managerId,
-      totalMembers: allUsers.length, totalMealsServed, totalDeposits,
-      totalFixedDeposit, totalMosqueFee, totalMemberBalancesAfterFinalization,
-      totalExpenses, mealRate, memberDetails,
-      expenseBreakdown: expenseBreakdownArray, isFinalized: true, notes: ''
-    };
-
-    const result = await monthlyFinalization.insertOne(finalizationRecord);
-
-    return res.status(201).json({
-      message: 'Month finalized successfully',
-      finalizationId: result.insertedId,
-      summary: {
-        month, totalMembers: allUsers.length, totalMealsServed,
-        totalDeposits, totalFixedDeposit, totalMosqueFee,
-        totalMemberBalancesAfterFinalization, totalExpenses, mealRate: parseFloat(mealRate.toFixed(2))
-      }
-    });
+    return res.status(201).json(responsePayload);
 
   } catch (error) {
+    if (error.statusCode) {
+      return res.status(error.statusCode).json({
+        error: error.message,
+        details: error.details,
+      });
+    }
     console.error('Error finalizing month:', error);
     return res.status(500).json({ error: 'Failed to finalize month' });
   }
@@ -595,19 +651,28 @@ const updateDeposit = async (req, res) => {
       return res.status(404).json({ error: 'Deposit not found' });
     }
 
-    if (month && month !== existingDeposit.month) {
-      const finalized = await monthlyFinalization.findOne({ month: existingDeposit.month });
-      if (finalized) {
-        return res.status(400).json({ error: 'Cannot update deposit - month is already finalized' });
-      }
+    if (month !== undefined && !validateMonth(month)) {
+      return res.status(400).json({ error: 'month must be in YYYY-MM format (e.g., 2025-01)' });
     }
 
-    const oldAmount = existingDeposit.amount;
-    const newAmount = amount !== undefined ? amount : oldAmount;
-    const amountDifference = newAmount - oldAmount;
+    if (amount !== undefined && (typeof amount !== 'number' || amount <= 0)) {
+      return res.status(400).json({ error: 'amount must be a positive number' });
+    }
+
+    const targetMonth = month || existingDeposit.month;
+    const finalizedMonth = await monthlyFinalization.findOne({
+      month: { $in: [...new Set([existingDeposit.month, targetMonth])] }
+    });
+    if (finalizedMonth) {
+      return res.status(400).json({ error: 'Cannot update deposit - month is already finalized' });
+    }
+
+    const oldAmount = round2(existingDeposit.amount);
+    const newAmount = amount !== undefined ? round2(amount) : oldAmount;
+    const amountDifference = round2(newAmount - oldAmount);
 
     const updateData = { updatedAt: new Date() };
-    if (amount !== undefined) updateData.amount = amount;
+    if (amount !== undefined) updateData.amount = newAmount;
     if (month !== undefined) updateData.month = month;
     if (depositDate !== undefined) updateData.depositDate = new Date(depositDate);
     if (notes !== undefined) updateData.notes = notes;
@@ -653,7 +718,7 @@ const deleteDeposit = async (req, res) => {
 
     await memberBalances.updateOne(
       { userId: existingDeposit.userId },
-      { $inc: { balance: -existingDeposit.amount }, $set: { lastUpdated: new Date() } }
+      { $inc: { balance: -round2(existingDeposit.amount) }, $set: { lastUpdated: new Date() } }
     );
 
     return res.status(200).json({ message: 'Deposit deleted successfully' });
@@ -720,8 +785,20 @@ const updateExpense = async (req, res) => {
       return res.status(404).json({ error: 'Expense not found' });
     }
 
-    const expenseMonth = format(existingExpense.date, 'yyyy-MM');
-    const finalized = await monthlyFinalization.findOne({ month: expenseMonth });
+    if (amount !== undefined && (typeof amount !== 'number' || amount <= 0)) {
+      return res.status(400).json({ error: 'amount must be a positive number' });
+    }
+
+    const expenseMonth = getMonthFromDate(existingExpense.date);
+    const targetMonth = date !== undefined ? getMonthFromDate(date) : expenseMonth;
+
+    if (!targetMonth) {
+      return res.status(400).json({ error: 'date must be a valid date string' });
+    }
+
+    const finalized = await monthlyFinalization.findOne({
+      month: { $in: [...new Set([expenseMonth, targetMonth])] }
+    });
     if (finalized) {
       return res.status(400).json({ error: 'Cannot update expense - month is already finalized' });
     }
@@ -733,7 +810,7 @@ const updateExpense = async (req, res) => {
       updateData.date = newDate;
     }
     if (category !== undefined) updateData.category = category;
-    if (amount !== undefined) updateData.amount = amount;
+    if (amount !== undefined) updateData.amount = round2(amount);
     if (description !== undefined) updateData.description = description;
     if (person !== undefined) updateData.person = person;
 
@@ -762,7 +839,7 @@ const deleteExpense = async (req, res) => {
       return res.status(404).json({ error: 'Expense not found' });
     }
 
-    const expenseMonth = format(existingExpense.date, 'yyyy-MM');
+    const expenseMonth = getMonthFromDate(existingExpense.date);
     const finalized = await monthlyFinalization.findOne({ month: expenseMonth });
     if (finalized) {
       return res.status(400).json({ error: 'Cannot delete expense - month is already finalized' });

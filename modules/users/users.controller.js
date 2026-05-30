@@ -1,6 +1,7 @@
 const { ObjectId } = require('mongodb');
 const { getCollections } = require('../../config/connectMongodb');
 const { DateTime } = require('luxon');
+const { assertMonthIsOpen, getMonthFromDate } = require('../finance/accounting.utils');
 
 // Default deadline rules
 const MEAL_DEADLINES = {
@@ -121,7 +122,12 @@ const registerMeal = async (req, res) => {
 
     const mealDate = new Date(date);
 
-    const { mealSchedules, mealRegistrations, users, systemLogs } = await getCollections();
+    const { mealSchedules, mealRegistrations, users, systemLogs, monthlyFinalization } = await getCollections();
+
+    const registrationMonth = getMonthFromDate(mealDate);
+    if (!registrationMonth || !await assertMonthIsOpen(monthlyFinalization, registrationMonth)) {
+      return res.status(400).json({ error: 'Cannot register meal - month is already finalized' });
+    }
 
     const schedule = await mealSchedules.findOne({ date: mealDate });
     if (!schedule) {
@@ -208,11 +214,16 @@ const updateMealRegistration = async (req, res) => {
       return res.status(400).json({ error: 'numberOfMeals must be a positive number' });
     }
 
-    const { mealRegistrations, mealSchedules } = await getCollections();
+    const { mealRegistrations, mealSchedules, monthlyFinalization } = await getCollections();
 
     const registration = await mealRegistrations.findOne({ _id: new ObjectId(registrationId) });
     if (!registration) {
       return res.status(404).json({ error: 'Registration not found' });
+    }
+
+    const registrationMonth = getMonthFromDate(registration.date);
+    if (!registrationMonth || !await assertMonthIsOpen(monthlyFinalization, registrationMonth)) {
+      return res.status(400).json({ error: 'Cannot update meal registration - month is already finalized' });
     }
 
     if (!registration.userId.equals(userId) && req.user.role !== 'admin' && req.user.role !== 'super_admin') {
@@ -258,13 +269,18 @@ const cancelMealRegistration = async (req, res) => {
       return res.status(400).json({ error: 'Invalid registration ID' });
     }
 
-    const { users, mealRegistrations, mealSchedules, systemLogs } = await getCollections();
+    const { users, mealRegistrations, mealSchedules, systemLogs, monthlyFinalization } = await getCollections();
 
     const user = await users.findOne({ _id: userId });
 
     const registration = await mealRegistrations.findOne({ _id: new ObjectId(registrationId) });
     if (!registration) {
       return res.status(404).json({ error: 'Registration not found' });
+    }
+
+    const registrationMonth = getMonthFromDate(registration.date);
+    if (!registrationMonth || !await assertMonthIsOpen(monthlyFinalization, registrationMonth)) {
+      return res.status(400).json({ error: 'Cannot cancel meal registration - month is already finalized' });
     }
 
     if (user.role !== 'admin' && user.role !== 'super_admin') {
@@ -434,7 +450,11 @@ const bulkToggleMealsForUser = async (req, res) => {
     const monthEnd = new Date(Date.UTC(year, monthIndex, 0, 23, 59, 59, 999));
 
     const currentTime = new Date();
-    const { mealSchedules, mealRegistrations } = await getCollections();
+    const { mealSchedules, mealRegistrations, monthlyFinalization } = await getCollections();
+
+    if (!await assertMonthIsOpen(monthlyFinalization, month)) {
+      return res.status(400).json({ error: 'Cannot toggle meals - month is already finalized' });
+    }
 
     // Fetch all non-holiday schedules and existing user registrations for the month in parallel
     const [schedules, existingRegistrations] = await Promise.all([

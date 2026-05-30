@@ -1,5 +1,24 @@
 const { ObjectId } = require('mongodb');
 const { getCollections } = require('../../config/connectMongodb');
+const { assertMonthIsOpen, getMonthFromDate } = require('../finance/accounting.utils');
+
+const getMonthsInRange = (start, end) => {
+  const months = new Set();
+  const currentDate = new Date(Date.UTC(start.getUTCFullYear(), start.getUTCMonth(), 1));
+  const finalMonth = new Date(Date.UTC(end.getUTCFullYear(), end.getUTCMonth(), 1));
+
+  while (currentDate <= finalMonth) {
+    months.add(getMonthFromDate(currentDate));
+    currentDate.setUTCMonth(currentDate.getUTCMonth() + 1);
+  }
+
+  return Array.from(months);
+};
+
+const ensureMonthsAreOpen = async (monthlyFinalization, months) => {
+  const finalized = await monthlyFinalization.findOne({ month: { $in: months } });
+  return !finalized;
+};
 
 // Helper function to check if a date is weekend (Fri or Sat)
 const isWeekend = (date) => {
@@ -57,7 +76,11 @@ const generateSchedules = async (req, res) => {
       return res.status(400).json({ error: 'Date range cannot exceed 90 days' });
     }
 
-    const { mealSchedules, mealRegistrations, users } = await getCollections();
+    const { mealSchedules, mealRegistrations, users, monthlyFinalization } = await getCollections();
+
+    if (!await ensureMonthsAreOpen(monthlyFinalization, getMonthsInRange(start, end))) {
+      return res.status(400).json({ error: 'Cannot generate schedules - one or more months are already finalized' });
+    }
 
     // Fetch existing schedules and default users in parallel
     const [existingSchedules, defaultUsers] = await Promise.all([
@@ -201,11 +224,16 @@ const updateSchedule = async (req, res) => {
       updateData.availableMeals = normalizedAvailableMeals;
     }
 
-    const { mealSchedules, mealRegistrations, users } = await getCollections();
+    const { mealSchedules, mealRegistrations, users, monthlyFinalization } = await getCollections();
     const existingSchedule = await mealSchedules.findOne({ _id: new ObjectId(scheduleId) });
 
     if (!existingSchedule) {
       return res.status(404).json({ error: 'Schedule not found' });
+    }
+
+    const scheduleMonth = getMonthFromDate(existingSchedule.date);
+    if (!scheduleMonth || !await assertMonthIsOpen(monthlyFinalization, scheduleMonth)) {
+      return res.status(400).json({ error: 'Cannot update schedule - month is already finalized' });
     }
 
     const previousAvailableMealTypes = new Set(
@@ -305,7 +333,7 @@ const bulkUpdateSchedules = async (req, res) => {
       return res.status(400).json({ error: 'schedules array is required and cannot be empty' });
     }
 
-    const { mealSchedules } = await getCollections();
+    const { mealSchedules, monthlyFinalization } = await getCollections();
 
     const updatePromises = [];
     const errors = [];
@@ -329,6 +357,22 @@ const bulkUpdateSchedules = async (req, res) => {
           { $set: updateData }
         )
       );
+    }
+
+    const validScheduleIds = schedules
+      .filter(schedule => schedule.scheduleId && ObjectId.isValid(schedule.scheduleId))
+      .map(schedule => new ObjectId(schedule.scheduleId));
+
+    if (validScheduleIds.length > 0) {
+      const existingSchedules = await mealSchedules.find(
+        { _id: { $in: validScheduleIds } },
+        { projection: { date: 1 } }
+      ).toArray();
+      const months = [...new Set(existingSchedules.map(schedule => getMonthFromDate(schedule.date)).filter(Boolean))];
+
+      if (!await ensureMonthsAreOpen(monthlyFinalization, months)) {
+        return res.status(400).json({ error: 'Cannot update schedules - one or more months are already finalized' });
+      }
     }
 
     const results = await Promise.all(updatePromises);
@@ -355,15 +399,22 @@ const deleteSchedule = async (req, res) => {
       return res.status(400).json({ error: 'Invalid schedule ID' });
     }
 
-    const { mealSchedules, mealRegistrations } = await getCollections();
+    const { mealSchedules, mealRegistrations, monthlyFinalization } = await getCollections();
 
-    const schedule = await mealSchedules.findOneAndDelete({
+    const schedule = await mealSchedules.findOne({
       _id: new ObjectId(scheduleId)
     });
 
     if (!schedule) {
       return res.status(404).json({ error: 'Schedule not found' });
     }
+
+    const scheduleMonth = getMonthFromDate(schedule.date);
+    if (!scheduleMonth || !await assertMonthIsOpen(monthlyFinalization, scheduleMonth)) {
+      return res.status(400).json({ error: 'Cannot delete schedule - month is already finalized' });
+    }
+
+    await mealSchedules.deleteOne({ _id: new ObjectId(scheduleId) });
 
     const { deletedCount } = await mealRegistrations.deleteMany({
       date: schedule.date
