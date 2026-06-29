@@ -83,7 +83,8 @@ const getAvailableMeals = async (req, res) => {
           canRegister: meal.isAvailable && !isDeadlinePassed && !isRegistered,
           isRegistered,
           registrationId: isRegistered ? existingRegistration._id : null,
-          numberOfMeals: isRegistered ? existingRegistration.numberOfMeals || 1 : null
+          numberOfMeals: isRegistered ? existingRegistration.numberOfMeals || 1 : null,
+          comment: isRegistered ? existingRegistration.comment || '' : null
         };
       });
 
@@ -100,7 +101,7 @@ const getAvailableMeals = async (req, res) => {
 
 const registerMeal = async (req, res) => {
   try {
-    const { date, mealType, userId: requestUserId, numberOfMeals } = req.body;
+    const { date, mealType, userId: requestUserId, numberOfMeals, comment } = req.body;
     let userId = req.user?._id;
     let isLateRegistration = false
     const currentTime = new Date();
@@ -158,6 +159,17 @@ const registerMeal = async (req, res) => {
       numberOfMeals: numberOfMeals || 1,
       registeredAt: new Date()
     };
+
+    if (comment !== undefined) {
+      if (typeof comment !== 'string') {
+        return res.status(400).json({ error: 'comment must be a string' });
+      }
+
+      const normalizedComment = comment.trim();
+      if (normalizedComment) {
+        registration.comment = normalizedComment;
+      }
+    }
 
     const result = await mealRegistrations.insertOne(registration);
 
@@ -257,6 +269,76 @@ const updateMealRegistration = async (req, res) => {
   } catch (error) {
     console.error('Error updating meal registration:', error);
     return res.status(500).json({ error: 'Failed to update meal registration' });
+  }
+};
+
+const updateMealRegistrationComment = async (req, res) => {
+  try {
+    const { registrationId } = req.params;
+    const { comment } = req.body;
+    const userId = req.user?._id;
+
+    if (!ObjectId.isValid(registrationId)) {
+      return res.status(400).json({ error: 'Invalid registration ID' });
+    }
+
+    if (comment !== undefined && typeof comment !== 'string') {
+      return res.status(400).json({ error: 'comment must be a string' });
+    }
+
+    const normalizedComment = typeof comment === 'string' ? comment.trim() : '';
+
+    const { mealRegistrations, mealSchedules, monthlyFinalization } = await getCollections();
+
+    const registration = await mealRegistrations.findOne({ _id: new ObjectId(registrationId) });
+    if (!registration) {
+      return res.status(404).json({ error: 'Registration not found' });
+    }
+
+    const registrationMonth = getMonthFromDate(registration.date);
+    if (!registrationMonth || !await assertMonthIsOpen(monthlyFinalization, registrationMonth)) {
+      return res.status(400).json({ error: 'Cannot update meal registration - month is already finalized' });
+    }
+
+    if (!registration.userId.equals(userId) && req.user.role !== 'admin' && req.user.role !== 'super_admin') {
+      return res.status(403).json({ error: 'You can only update your own registration' });
+    }
+
+    if (req.user.role !== 'admin' && req.user.role !== 'super_admin') {
+      const schedule = await mealSchedules.findOne({ date: registration.date });
+      if (!schedule) {
+        return res.status(404).json({ error: 'Meal schedule not found for this date' });
+      }
+
+      const mealConfig = schedule.availableMeals.find(m => m.mealType === registration.mealType);
+      if (!mealConfig || !mealConfig.isAvailable) {
+        return res.status(400).json({ error: 'Meal is no longer available for modification' });
+      }
+
+      const deadline = calculateDeadline(new Date(registration.date), registration.mealType, null);
+      if (new Date() > deadline) {
+        return res.status(400).json({ error: 'Deadline has passed. Changes are no longer allowed.' });
+      }
+    }
+
+    await mealRegistrations.updateOne(
+      { _id: new ObjectId(registrationId) },
+      {
+        $set: {
+          comment: normalizedComment || '',
+          updatedAt: new Date()
+        }
+      }
+    );
+
+    return res.status(200).json({
+      message: 'Registration comment updated successfully',
+      comment: normalizedComment || ''
+    });
+
+  } catch (error) {
+    console.error('Error updating meal registration comment:', error);
+    return res.status(500).json({ error: 'Failed to update meal registration comment' });
   }
 };
 
@@ -518,6 +600,7 @@ module.exports = {
   getAvailableMeals,
   registerMeal,
   updateMealRegistration,
+  updateMealRegistrationComment,
   cancelMealRegistration,
   getMyRegistrations,
   getTotalMealsForUser,

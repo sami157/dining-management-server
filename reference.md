@@ -103,6 +103,7 @@ interface MealRegistration {
   date: string;
   mealType: MealType;
   numberOfMeals: number;
+  comment?: string;
   registeredAt: string;
   updatedAt?: string;
 }
@@ -358,6 +359,7 @@ Meal member routes are mounted under `/users`.
 | `POST` | `/users/meals/register` | Any active user | Register current user for a meal. Admins/super admins can register another user. |
 | `POST` | `/users/meals/bulk-register` | Any active user | Register current user for all available, deadline-open meals in a month. |
 | `PATCH` | `/users/meals/register/:registrationId` | Any active user | Update `numberOfMeals`. |
+| `PATCH` | `/users/meals/register/:registrationId/comment` | Any active user | Add or update the registration comment. |
 | `DELETE` | `/users/meals/register/cancel/:registrationId` | Any active user | Cancel a registration. |
 | `GET` | `/users/meals/total/:email` | Any active user | Get weighted meal totals for a month. |
 
@@ -408,6 +410,7 @@ Required fields: `date`, `mealType`.
   "date": "2026-04-08",
   "mealType": "night",
   "numberOfMeals": 1,
+  "comment": "Optional note for the registration",
   "userId": "optional-target-user-id-for-admin-or-super-admin"
 }
 ```
@@ -418,6 +421,7 @@ Rules:
 - `admin` and `super_admin` can pass `userId` to register another user and can register after the deadline.
 - Duplicate registrations for the same `userId`, `date`, and `mealType` are rejected.
 - `numberOfMeals` defaults to `1`.
+- `comment` is optional and only stored when provided as a non-empty string.
 
 Response `201`:
 
@@ -469,6 +473,25 @@ Response `200`:
 
 ```json
 { "message": "Registration updated successfully" }
+```
+
+### `PATCH /users/meals/register/:registrationId/comment`
+
+```json
+{ "comment": "Optional note for the registration" }
+```
+
+Rules:
+
+- `comment` must be a string if provided.
+- Normal users can only update their own registration before the default deadline.
+- Admins and super admins can update any registration after the deadline.
+- Sending an empty string clears the stored comment.
+
+Response `200`:
+
+```json
+{ "message": "Registration comment updated successfully", "comment": "Optional note for the registration" }
 ```
 
 ### `DELETE /users/meals/register/cancel/:registrationId`
