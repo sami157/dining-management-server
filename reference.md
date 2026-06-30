@@ -483,9 +483,9 @@ Response `200`:
 
 Rules:
 
-- `comment` must be a string if provided.
-- Normal users can only update their own registration before the default deadline.
-- Admins and super admins can update any registration after the deadline.
+- `comment` is required and must be a string.
+- Normal users can update their own comment at any time before the month is finalized.
+- Admins and super admins can update any registration comment at any time before the month is finalized.
 - Sending an empty string clears the stored comment.
 
 Response `200`:

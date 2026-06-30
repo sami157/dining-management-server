@@ -253,7 +253,7 @@ const updateMealRegistration = async (req, res) => {
         return res.status(400).json({ error: 'Meal is no longer available for modification' });
       }
 
-      const deadline = calculateDeadline(new Date(registration.date), registration.mealType, null);
+      const deadline = calculateDeadline(new Date(registration.date), registration.mealType, mealConfig.customDeadline);
       if (new Date() > deadline) {
         return res.status(400).json({ error: 'Deadline has passed. Changes are no longer allowed.' });
       }
@@ -282,7 +282,11 @@ const updateMealRegistrationComment = async (req, res) => {
       return res.status(400).json({ error: 'Invalid registration ID' });
     }
 
-    if (comment !== undefined && typeof comment !== 'string') {
+    if (comment === undefined) {
+      return res.status(400).json({ error: 'comment is required' });
+    }
+
+    if (typeof comment !== 'string') {
       return res.status(400).json({ error: 'comment must be a string' });
     }
 
@@ -302,23 +306,6 @@ const updateMealRegistrationComment = async (req, res) => {
 
     if (!registration.userId.equals(userId) && req.user.role !== 'admin' && req.user.role !== 'super_admin') {
       return res.status(403).json({ error: 'You can only update your own registration' });
-    }
-
-    if (req.user.role !== 'admin' && req.user.role !== 'super_admin') {
-      const schedule = await mealSchedules.findOne({ date: registration.date });
-      if (!schedule) {
-        return res.status(404).json({ error: 'Meal schedule not found for this date' });
-      }
-
-      const mealConfig = schedule.availableMeals.find(m => m.mealType === registration.mealType);
-      if (!mealConfig || !mealConfig.isAvailable) {
-        return res.status(400).json({ error: 'Meal is no longer available for modification' });
-      }
-
-      const deadline = calculateDeadline(new Date(registration.date), registration.mealType, null);
-      if (new Date() > deadline) {
-        return res.status(400).json({ error: 'Deadline has passed. Changes are no longer allowed.' });
-      }
     }
 
     await mealRegistrations.updateOne(
