@@ -263,7 +263,19 @@ All fields are optional. Empty string values only persist for `designation` and 
 { "mealDefault": true }
 ```
 
-`mealDefault` must be a boolean. When enabled, schedule generation and newly available meals auto-register the user.
+`mealDefault` must be a boolean. When changed from off to on, the user is also registered for every already-scheduled available meal dated today or later in `Asia/Dhaka` whose default or custom deadline is still open. Meals in finalized months and existing registrations are skipped. Schedule generation and newly available meals continue to auto-register users who have this preference enabled. Turning the preference off does not cancel existing registrations.
+
+Response `200` includes the number of new registrations created by this request:
+
+```json
+{
+  "message": "Meal default updated successfully",
+  "registeredCount": 4,
+  "user": {}
+}
+```
+
+`registeredCount` is `0` when disabling the preference, when it was already enabled, or when no eligible meals remain.
 
 ### `PUT /users/role/:userId`
 

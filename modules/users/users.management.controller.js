@@ -1,5 +1,6 @@
 const { ObjectId } = require('mongodb');
 const { getCollections } = require('../../config/connectMongodb');
+const { applyMealDefaultPreference } = require('./meal-default.utils');
 
 const VALID_ROLES = ['admin', 'manager', 'member', 'moderator', 'staff', 'super_admin'];
 
@@ -98,27 +99,27 @@ const updateUserProfile = async (req, res) => {
 
 const updateMealDefault = async (req, res) => {
   try {
-    const userId = req.user?._id;
     const { mealDefault } = req.body;
 
     if (typeof mealDefault !== 'boolean') {
       return res.status(400).json({ error: 'mealDefault must be a boolean' });
     }
 
-    const { users } = await getCollections();
-    const result = await users.findOneAndUpdate(
-      { _id: userId },
-      { $set: { mealDefault, updatedAt: new Date() } },
-      { returnDocument: 'after' }
-    );
+    const collections = await getCollections();
+    const result = await applyMealDefaultPreference({
+      user: req.user,
+      mealDefault,
+      ...collections
+    });
 
-    if (!result) {
+    if (!result?.user) {
       return res.status(404).json({ error: 'User not found' });
     }
 
     return res.status(200).json({
       message: 'Meal default updated successfully',
-      user: result
+      user: result.user,
+      registeredCount: result.registeredCount
     });
 
   } catch (error) {
