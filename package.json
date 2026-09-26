@@ -4,7 +4,7 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "test": "node modules/users/meal-default.utils.test.js"
+    "test": "node modules/users/all.test.js"
   },
   "keywords": [],
   "author": "",

@@ -1,5 +1,6 @@
 const { DateTime } = require('luxon');
 const { getMonthFromDate } = require('../finance/accounting.utils');
+const { buildMealActivityLog, insertActivityLogs, systemActor } = require('./activityLogs.utils');
 
 const TIME_ZONE = 'Asia/Dhaka';
 
@@ -86,11 +87,16 @@ const createMealDefaultRegistrations = async ({
   mealSchedules,
   mealRegistrations,
   monthlyFinalization,
+  systemLogs,
+  targetUser,
+  session,
+  trigger = 'default_preference',
   now = new Date()
 }) => {
   const todayStart = getDhakaTodayStartDate(now);
+  const readOptions = session ? { session } : undefined;
   const schedules = await readCollection(
-    mealSchedules.find({ date: { $gte: todayStart } })
+    mealSchedules.find({ date: { $gte: todayStart } }, readOptions)
   );
 
   if (schedules.length === 0) return 0;
@@ -99,9 +105,9 @@ const createMealDefaultRegistrations = async ({
   const [finalizedRecords, existingRegistrations] = await Promise.all([
     monthlyFinalization.find(
       { month: { $in: months } },
-      { projection: { month: 1 } }
+      { projection: { month: 1 }, ...readOptions }
     ).toArray(),
-    mealRegistrations.find({ userId, date: { $gte: todayStart } }).toArray()
+    mealRegistrations.find({ userId, date: { $gte: todayStart } }, readOptions).toArray()
   ]);
 
   const candidates = getMealDefaultRegistrationCandidates({
@@ -131,18 +137,43 @@ const createMealDefaultRegistrations = async ({
   let registeredCount = 0;
   const batchSize = 500;
 
+  const logsForResult = (result, candidatesInBatch) => {
+    if (!systemLogs || !targetUser || !result?.upsertedIds) return [];
+
+    return Object.entries(result.upsertedIds).map(([index, insertedId]) => buildMealActivityLog({
+      action: 'meal_registered',
+      registration: { ...candidatesInBatch[Number(index)], _id: insertedId },
+      targetUser,
+      actorUser: systemActor('Automatic registration'),
+      trigger,
+      automatic: true,
+      createdAt: now
+    }));
+  };
+
   for (let index = 0; index < operations.length; index += batchSize) {
     const batch = operations.slice(index, index + batchSize);
+    const batchCandidates = candidates.slice(index, index + batchSize);
     try {
-      const result = await mealRegistrations.bulkWrite(batch, { ordered: false });
+      const result = await mealRegistrations.bulkWrite(batch, {
+        ordered: false,
+        ...(session ? { session } : {})
+      });
       registeredCount += result.upsertedCount;
+      await insertActivityLogs(systemLogs, logsForResult(result, batchCandidates), { session });
     } catch (error) {
       // Another registration path may insert the same meal after our read.
       // Retry the idempotent upserts once; unrelated write errors still fail.
       if (!isDuplicateKeyError(error)) throw error;
       registeredCount += error.upsertedCount || 0;
-      const result = await mealRegistrations.bulkWrite(batch, { ordered: false });
+      const firstResult = error.result || error;
+      await insertActivityLogs(systemLogs, logsForResult(firstResult, batchCandidates), { session });
+      const result = await mealRegistrations.bulkWrite(batch, {
+        ordered: false,
+        ...(session ? { session } : {})
+      });
       registeredCount += result.upsertedCount;
+      await insertActivityLogs(systemLogs, logsForResult(result, batchCandidates), { session });
     }
   }
 
@@ -156,13 +187,15 @@ const applyMealDefaultPreference = async ({
   mealSchedules,
   mealRegistrations,
   monthlyFinalization,
+  systemLogs,
+  session,
   now = new Date()
 }) => {
   const wasEnabled = user.mealDefault === true;
   const result = await users.findOneAndUpdate(
     { _id: user._id },
     { $set: { mealDefault, updatedAt: now } },
-    { returnDocument: 'after' }
+    { returnDocument: 'after', ...(session ? { session } : {}) }
   );
 
   if (!result) return null;
@@ -177,6 +210,10 @@ const applyMealDefaultPreference = async ({
       mealSchedules,
       mealRegistrations,
       monthlyFinalization,
+      systemLogs,
+      targetUser: result,
+      session,
+      trigger: 'default_preference',
       now
     });
     return { user: result, registeredCount };
@@ -184,7 +221,8 @@ const applyMealDefaultPreference = async ({
     // Leave the preference off if the catch-up failed so the user can retry.
     await users.updateOne(
       { _id: user._id, mealDefault: true },
-      { $set: { mealDefault: false, updatedAt: new Date() } }
+      { $set: { mealDefault: false, updatedAt: new Date() } },
+      session ? { session } : undefined
     );
     throw error;
   }

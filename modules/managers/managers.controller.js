@@ -1,6 +1,7 @@
 const { ObjectId } = require('mongodb');
-const { getCollections } = require('../../config/connectMongodb');
+const { getCollections, getMongoClient } = require('../../config/connectMongodb');
 const { assertMonthIsOpen, getMonthFromDate } = require('../finance/accounting.utils');
+const { buildMealActivityLog, insertActivityLogs, systemActor } = require('../users/activityLogs.utils');
 
 const getMonthsInRange = (start, end) => {
   const months = new Set();
@@ -76,7 +77,7 @@ const generateSchedules = async (req, res) => {
       return res.status(400).json({ error: 'Date range cannot exceed 90 days' });
     }
 
-    const { mealSchedules, mealRegistrations, users, monthlyFinalization } = await getCollections();
+    const { mealSchedules, mealRegistrations, users, systemLogs, monthlyFinalization } = await getCollections();
 
     if (!await ensureMonthsAreOpen(monthlyFinalization, getMonthsInRange(start, end))) {
       return res.status(400).json({ error: 'Cannot generate schedules - one or more months are already finalized' });
@@ -90,7 +91,7 @@ const generateSchedules = async (req, res) => {
       ).toArray(),
       users.find(
         { mealDefault: true, isActive: { $ne: false } },
-        { projection: { _id: 1 } }
+        { projection: { _id: 1, name: 1, email: 1 } }
       ).toArray()
     ]);
 
@@ -121,41 +122,61 @@ const generateSchedules = async (req, res) => {
       });
     }
 
-    const result = await mealSchedules.insertMany(schedulesToCreate);
-
+    const schedulesCreated = schedulesToCreate.length;
     let registrationsCreated = 0;
+    const client = await getMongoClient();
+    const session = client.startSession();
 
-    // Auto-register default users for each new schedule
-    if (defaultUsers.length > 0) {
-      const registrations = [];
+    try {
+      await session.withTransaction(async () => {
+        await mealSchedules.insertMany(schedulesToCreate, { session });
 
-      for (const schedule of schedulesToCreate) {
-        const availableMealTypes = schedule.availableMeals
-          .filter(meal => meal.isAvailable)
-          .map(meal => meal.mealType);
+        // Auto-register default users for each new schedule.
+        if (defaultUsers.length > 0) {
+          const registrations = [];
+          const registeredAt = new Date();
 
-        for (const user of defaultUsers) {
-          for (const mealType of availableMealTypes) {
-            registrations.push({
-              userId: user._id,
-              date: schedule.date,
-              mealType,
-              numberOfMeals: 1,
-              registeredAt: new Date()
-            });
+          for (const schedule of schedulesToCreate) {
+            const availableMealTypes = schedule.availableMeals
+              .filter(meal => meal.isAvailable)
+              .map(meal => meal.mealType);
+
+            for (const user of defaultUsers) {
+              for (const mealType of availableMealTypes) {
+                registrations.push({
+                  userId: user._id,
+                  date: schedule.date,
+                  mealType,
+                  numberOfMeals: 1,
+                  registeredAt
+                });
+              }
+            }
+          }
+
+          if (registrations.length > 0) {
+            const registrationResult = await mealRegistrations.insertMany(registrations, { session });
+            registrationsCreated = registrationResult.insertedCount;
+            const logs = registrations.map((registration, index) => buildMealActivityLog({
+              action: 'meal_registered',
+              registration: { ...registration, _id: registrationResult.insertedIds[index] },
+              targetUser: defaultUsers.find(user => user._id.equals(registration.userId)),
+              actorUser: systemActor('Automatic registration'),
+              trigger: 'schedule_generation',
+              automatic: true,
+              createdAt: registeredAt
+            }));
+            await insertActivityLogs(systemLogs, logs, { session });
           }
         }
-      }
-
-      if (registrations.length > 0) {
-        const registrationResult = await mealRegistrations.insertMany(registrations);
-        registrationsCreated = registrationResult.insertedCount;
-      }
+      });
+    } finally {
+      await session.endSession();
     }
 
     return res.status(201).json({
-      message: `${result.insertedCount} schedules created successfully`,
-      count: result.insertedCount,
+      message: `${schedulesCreated} schedules created successfully`,
+      count: schedulesCreated,
       registrationsCreated
     });
 
@@ -224,7 +245,7 @@ const updateSchedule = async (req, res) => {
       updateData.availableMeals = normalizedAvailableMeals;
     }
 
-    const { mealSchedules, mealRegistrations, users, monthlyFinalization } = await getCollections();
+    const { mealSchedules, mealRegistrations, users, systemLogs, monthlyFinalization } = await getCollections();
     const existingSchedule = await mealSchedules.findOne({ _id: new ObjectId(scheduleId) });
 
     if (!existingSchedule) {
@@ -242,27 +263,6 @@ const updateSchedule = async (req, res) => {
         .map(meal => meal.mealType)
     );
 
-    const result = await mealSchedules.findOneAndUpdate(
-      { _id: new ObjectId(scheduleId) },
-      { $set: updateData },
-      { returnDocument: 'after' }
-    );
-
-    if (!result) {
-      return res.status(404).json({ error: 'Schedule not found' });
-    }
-
-    const unavailableMealTypes = result.availableMeals
-      .filter(meal => !meal.isAvailable)
-      .map(meal => meal.mealType);
-
-    if (unavailableMealTypes.length > 0) {
-      await mealRegistrations.deleteMany({
-        date: result.date,
-        mealType: { $in: unavailableMealTypes }
-      });
-    }
-
     const newlyAvailableMealTypes = normalizedAvailableMeals
       ? normalizedAvailableMeals
         .filter(meal => meal.isAvailable && !previousAvailableMealTypes.has(meal.mealType))
@@ -270,47 +270,116 @@ const updateSchedule = async (req, res) => {
       : [];
 
     let registrationsCreated = 0;
+    let result;
+    const client = await getMongoClient();
+    const session = client.startSession();
 
-    if (newlyAvailableMealTypes.length > 0) {
-      const [defaultUsers, existingRegistrations] = await Promise.all([
-        users.find(
-          { mealDefault: true, isActive: { $ne: false } },
-          { projection: { _id: 1 } }
-        ).toArray(),
-        mealRegistrations.find({
-          date: result.date,
-          mealType: { $in: newlyAvailableMealTypes }
-        }).toArray()
-      ]);
+    try {
+      await session.withTransaction(async () => {
+        result = await mealSchedules.findOneAndUpdate(
+          { _id: new ObjectId(scheduleId) },
+          { $set: updateData },
+          { returnDocument: 'after', session }
+        );
 
-      const existingRegistrationKeys = new Set(
-        existingRegistrations.map(registration => `${registration.userId?.toString()}_${registration.mealType}`)
-      );
+        if (!result) {
+          throw new Error('Schedule not found');
+        }
 
-      const registrationsToCreate = [];
+        const unavailableMealTypes = result.availableMeals
+          .filter(meal => !meal.isAvailable)
+          .map(meal => meal.mealType);
+        const deletedRegistrations = unavailableMealTypes.length > 0
+          ? await mealRegistrations.find({
+            date: result.date,
+            mealType: { $in: unavailableMealTypes }
+          }, { session }).toArray()
+          : [];
 
-      for (const user of defaultUsers) {
-        const userId = user._id.toString();
+        if (deletedRegistrations.length > 0) {
+          await mealRegistrations.deleteMany({
+            date: result.date,
+            mealType: { $in: unavailableMealTypes }
+          }, { session });
+        }
 
-        for (const mealType of newlyAvailableMealTypes) {
-          const key = `${userId}_${mealType}`;
+        const logs = [];
+        if (deletedRegistrations.length > 0) {
+          const targetUsers = await users.find({
+            _id: { $in: deletedRegistrations.map(registration => registration.userId) }
+          }, { session }).toArray();
+          const targetUsersMap = new Map(targetUsers.map(user => [user._id.toString(), user]));
 
-          if (!existingRegistrationKeys.has(key)) {
-            registrationsToCreate.push({
-              userId: user._id,
+          deletedRegistrations.forEach(registration => {
+            logs.push(buildMealActivityLog({
+              action: 'meal_deregistered',
+              registration,
+              targetUser: targetUsersMap.get(registration.userId.toString()),
+              actorUser: systemActor('Schedule change'),
+              trigger: 'schedule_update',
+              automatic: true,
+              createdAt: updateData.updatedAt
+            }));
+          });
+        }
+
+        if (newlyAvailableMealTypes.length > 0) {
+          const [defaultUsers, existingRegistrations] = await Promise.all([
+            users.find(
+              { mealDefault: true, isActive: { $ne: false } },
+              { projection: { _id: 1, name: 1, email: 1 }, session }
+            ).toArray(),
+            mealRegistrations.find({
               date: result.date,
-              mealType,
-              numberOfMeals: 1,
-              registeredAt: new Date()
+              mealType: { $in: newlyAvailableMealTypes }
+            }, { session }).toArray()
+          ]);
+
+          const existingRegistrationKeys = new Set(
+            existingRegistrations.map(registration => `${registration.userId?.toString()}_${registration.mealType}`)
+          );
+          const registrationsToCreate = [];
+          const registeredAt = new Date();
+
+          for (const user of defaultUsers) {
+            for (const mealType of newlyAvailableMealTypes) {
+              const key = `${user._id.toString()}_${mealType}`;
+
+              if (!existingRegistrationKeys.has(key)) {
+                registrationsToCreate.push({
+                  userId: user._id,
+                  date: result.date,
+                  mealType,
+                  numberOfMeals: 1,
+                  registeredAt
+                });
+              }
+            }
+          }
+
+          if (registrationsToCreate.length > 0) {
+            const registrationResult = await mealRegistrations.insertMany(registrationsToCreate, { session });
+            registrationsCreated = registrationResult.insertedCount;
+            const targetUsersMap = new Map(defaultUsers.map(user => [user._id.toString(), user]));
+
+            registrationsToCreate.forEach((registration, index) => {
+              logs.push(buildMealActivityLog({
+                action: 'meal_registered',
+                registration: { ...registration, _id: registrationResult.insertedIds[index] },
+                targetUser: targetUsersMap.get(registration.userId.toString()),
+                actorUser: systemActor('Automatic registration'),
+                trigger: 'schedule_update',
+                automatic: true,
+                createdAt: registeredAt
+              }));
             });
           }
         }
-      }
 
-      if (registrationsToCreate.length > 0) {
-        const registrationResult = await mealRegistrations.insertMany(registrationsToCreate);
-        registrationsCreated = registrationResult.insertedCount;
-      }
+        await insertActivityLogs(systemLogs, logs, { session });
+      });
+    } finally {
+      await session.endSession();
     }
 
     return res.status(200).json({
@@ -399,7 +468,7 @@ const deleteSchedule = async (req, res) => {
       return res.status(400).json({ error: 'Invalid schedule ID' });
     }
 
-    const { mealSchedules, mealRegistrations, monthlyFinalization } = await getCollections();
+    const { mealSchedules, mealRegistrations, users, systemLogs, monthlyFinalization } = await getCollections();
 
     const schedule = await mealSchedules.findOne({
       _id: new ObjectId(scheduleId)
@@ -414,11 +483,44 @@ const deleteSchedule = async (req, res) => {
       return res.status(400).json({ error: 'Cannot delete schedule - month is already finalized' });
     }
 
-    await mealSchedules.deleteOne({ _id: new ObjectId(scheduleId) });
+    const client = await getMongoClient();
+    const session = client.startSession();
+    let deletedCount = 0;
 
-    const { deletedCount } = await mealRegistrations.deleteMany({
-      date: schedule.date
-    });
+    try {
+      await session.withTransaction(async () => {
+        const registrations = await mealRegistrations.find(
+          { date: schedule.date },
+          { session }
+        ).toArray();
+
+        await mealSchedules.deleteOne({ _id: new ObjectId(scheduleId) }, { session });
+        const deleteResult = await mealRegistrations.deleteMany(
+          { date: schedule.date },
+          { session }
+        );
+        deletedCount = deleteResult.deletedCount;
+
+        if (registrations.length > 0) {
+          const targetUsers = await users.find({
+            _id: { $in: registrations.map(registration => registration.userId) }
+          }, { session }).toArray();
+          const targetUsersMap = new Map(targetUsers.map(user => [user._id.toString(), user]));
+          const logs = registrations.map(registration => buildMealActivityLog({
+            action: 'meal_deregistered',
+            registration,
+            targetUser: targetUsersMap.get(registration.userId.toString()),
+            actorUser: systemActor('Schedule deletion'),
+            trigger: 'schedule_deletion',
+            automatic: true,
+            createdAt: new Date()
+          }));
+          await insertActivityLogs(systemLogs, logs, { session });
+        }
+      });
+    } finally {
+      await session.endSession();
+    }
 
     return res.status(200).json({
       message: 'Schedule deleted successfully',

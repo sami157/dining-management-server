@@ -204,6 +204,7 @@ Welcome to dining management server
 | `GET` | `/users` | No token enforced | List users. |
 | `GET` | `/users/get-role/:email` | No | Get an active user's role by email. |
 | `GET` | `/users/check-user/:email` | No | Check whether an active user exists for an email. |
+| `GET` | `/users/activity-logs` | Any active user; admins can view all logs or select a target user | Get paginated meal registration and deregistration activity logs. |
 
 ### `POST /users/create`
 
@@ -360,6 +361,67 @@ Response `200`:
 ```json
 { "doesExist": true }
 ```
+
+### `GET /users/activity-logs`
+
+Returns the authenticated user's activity logs by default for regular users. `admin` and `super_admin` users receive all users' activity logs when `userId` is omitted, or may provide `userId` to inspect one user, including inactive users.
+
+Query params:
+
+| Param | Required | Notes |
+| --- | --- | --- |
+| `userId` | No | Target user ID; only admins and super admins may provide it. |
+| `startDate` | No | Inclusive `YYYY-MM-DD` filter on log creation time in `Asia/Dhaka`. |
+| `endDate` | No | Inclusive `YYYY-MM-DD` filter on log creation time in `Asia/Dhaka`. |
+| `page` | No | Positive page number; defaults to `1`. |
+| `limit` | No | Positive page size; defaults to `25`, capped at `100`. |
+
+Response `200`:
+
+```json
+{
+  "userId": "USER_ID_OR_NULL",
+  "page": 1,
+  "limit": 25,
+  "total": 1,
+  "totalPages": 1,
+  "startDate": null,
+  "endDate": null,
+  "logs": [
+    {
+      "_id": "LOG_ID",
+      "schemaVersion": 1,
+      "action": "meal_registered",
+      "source": "self",
+      "targetUserId": "USER_ID",
+      "actorUserId": "USER_ID",
+      "actor": {
+        "type": "user",
+        "userId": "USER_ID",
+        "name": "Member Name",
+        "email": "member@example.com"
+      },
+      "target": {
+        "userId": "USER_ID",
+        "name": "Member Name",
+        "email": "member@example.com"
+      },
+      "payload": {
+        "registrationId": "REGISTRATION_ID",
+        "mealDate": "2026-04-08T00:00:00.000Z",
+        "mealType": "night",
+        "numberOfMeals": 1,
+        "trigger": "direct"
+      },
+      "createdAt": "2026-04-08T05:00:00.000Z"
+    }
+  ]
+}
+```
+
+For an admin or super admin all-users request, `userId` is `null`. For a regular user request without `userId`, or an admin request with a selected `userId`, it contains the scoped user ID.
+
+Current meal actions are `meal_registered` and `meal_deregistered`. `source` is `self`, `other_user`, or `auto`; event-specific fields belong inside `payload` so future log types can use different payload structures.
 
 ## Meals
 

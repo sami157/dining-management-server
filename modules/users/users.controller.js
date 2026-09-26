@@ -1,7 +1,8 @@
 const { ObjectId } = require('mongodb');
-const { getCollections } = require('../../config/connectMongodb');
+const { getCollections, getMongoClient } = require('../../config/connectMongodb');
 const { DateTime } = require('luxon');
 const { assertMonthIsOpen, getMonthFromDate } = require('../finance/accounting.utils');
+const { buildMealActivityLog, insertActivityLogs } = require('./activityLogs.utils');
 
 // Default deadline rules
 const MEAL_DEADLINES = {
@@ -103,12 +104,14 @@ const registerMeal = async (req, res) => {
   try {
     const { date, mealType, userId: requestUserId, numberOfMeals, comment } = req.body;
     let userId = req.user?._id;
-    let isLateRegistration = false
     const currentTime = new Date();
 
     if (requestUserId) {
       if (req.user.role !== 'admin' && req.user.role !== 'super_admin') {
         return res.status(403).json({ error: 'Not authorized to register for others' });
+      }
+      if (!ObjectId.isValid(requestUserId)) {
+        return res.status(400).json({ error: 'Invalid target user ID' });
       }
       userId = new ObjectId(requestUserId);
     }
@@ -123,7 +126,7 @@ const registerMeal = async (req, res) => {
 
     const mealDate = new Date(date);
 
-    const { mealSchedules, mealRegistrations, users, systemLogs, monthlyFinalization } = await getCollections();
+    const { mealSchedules, mealRegistrations, systemLogs, monthlyFinalization } = await getCollections();
 
     const registrationMonth = getMonthFromDate(mealDate);
     if (!registrationMonth || !await assertMonthIsOpen(monthlyFinalization, registrationMonth)) {
@@ -157,7 +160,7 @@ const registerMeal = async (req, res) => {
       date: mealDate,
       mealType,
       numberOfMeals: numberOfMeals || 1,
-      registeredAt: new Date()
+      registeredAt: currentTime
     };
 
     if (comment !== undefined) {
@@ -171,33 +174,33 @@ const registerMeal = async (req, res) => {
       }
     }
 
-    const result = await mealRegistrations.insertOne(registration);
+    const targetUser = requestUserId
+      ? await users.findOne({ _id: userId })
+      : req.user;
 
-    const byPerson = await users.findOne(
-      { _id: new ObjectId(req.user?._id) },
-      { projection: { name: 1 } }
-    );
-
-    const forPerson = await users.findOne(
-      { _id: userId },
-      { projection: { name: 1 } }
-    );
-
-    if (requestUserId) {
-      const deadline = calculateDeadline(mealDate, mealType, meal.customDeadline);
-      if (currentTime > deadline) {
-        isLateRegistration = true
-      }
+    if (!targetUser) {
+      return res.status(404).json({ error: 'Target user not found' });
     }
 
-    if (isLateRegistration) {
-      const log = {
-        type: 'meal-on',
-        byPerson,
-        forPerson,
-        registration,
-      }
-      await systemLogs.insertOne(log)
+    const client = await getMongoClient();
+    const session = client.startSession();
+    let result;
+
+    try {
+      await session.withTransaction(async () => {
+        result = await mealRegistrations.insertOne(registration, { session });
+        const log = buildMealActivityLog({
+          action: 'meal_registered',
+          registration: { ...registration, _id: result.insertedId },
+          targetUser,
+          actorUser: req.user,
+          trigger: requestUserId ? 'admin_on_behalf' : 'direct',
+          createdAt: currentTime
+        });
+        await insertActivityLogs(systemLogs, [log], { session });
+      });
+    } finally {
+      await session.endSession();
     }
 
     return res.status(201).json({
@@ -373,29 +376,39 @@ const cancelMealRegistration = async (req, res) => {
       }
     }
 
-    const byPerson = await users.findOne(
-      { _id: new ObjectId(req.user?._id) },
-      { projection: { name: 1 } }
-    );
-
-    const forPerson = await users.findOne(
-      { _id: registration.userId },
-      { projection: { name: 1 } }
-    );
-
-    if (!registration.userId.equals(userId)) {
-      const log = {
-        type: 'meal-off',
-        byPerson,
-        forPerson,
-        mealDate: registration.mealDate,
-        mealType: registration.mealType,
-        cancelledAt: new Date()
-      }
-      await systemLogs.insertOne(log)
+    const targetUser = await users.findOne({ _id: registration.userId });
+    if (!targetUser) {
+      return res.status(404).json({ error: 'Target user not found' });
     }
 
-    await mealRegistrations.deleteOne({ _id: new ObjectId(registrationId) });
+    const cancelledAt = new Date();
+    const client = await getMongoClient();
+    const session = client.startSession();
+
+    try {
+      await session.withTransaction(async () => {
+        const result = await mealRegistrations.deleteOne(
+          { _id: new ObjectId(registrationId) },
+          { session }
+        );
+
+        if (result.deletedCount !== 1) {
+          throw new Error('Registration was not deleted');
+        }
+
+        const log = buildMealActivityLog({
+          action: 'meal_deregistered',
+          registration,
+          targetUser,
+          actorUser: req.user,
+          trigger: 'explicit_cancel',
+          createdAt: cancelledAt
+        });
+        await insertActivityLogs(systemLogs, [log], { session });
+      });
+    } finally {
+      await session.endSession();
+    }
 
     return res.status(200).json({ message: 'Meal registration cancelled successfully' });
 
@@ -519,7 +532,7 @@ const bulkToggleMealsForUser = async (req, res) => {
     const monthEnd = new Date(Date.UTC(year, monthIndex, 0, 23, 59, 59, 999));
 
     const currentTime = new Date();
-    const { mealSchedules, mealRegistrations, monthlyFinalization } = await getCollections();
+    const { mealSchedules, mealRegistrations, systemLogs, monthlyFinalization } = await getCollections();
 
     if (!await assertMonthIsOpen(monthlyFinalization, month)) {
       return res.status(400).json({ error: 'Cannot toggle meals - month is already finalized' });
@@ -542,6 +555,7 @@ const bulkToggleMealsForUser = async (req, res) => {
     );
 
     const toInsert = [];
+    const registeredAt = new Date();
 
     for (const schedule of schedules) {
       for (const meal of schedule.availableMeals) {
@@ -558,7 +572,7 @@ const bulkToggleMealsForUser = async (req, res) => {
           date: schedule.date,
           mealType: meal.mealType,
           numberOfMeals: 1,
-          registeredAt: new Date(),
+          registeredAt,
         });
       }
     }
@@ -570,7 +584,25 @@ const bulkToggleMealsForUser = async (req, res) => {
       });
     }
 
-    await mealRegistrations.insertMany(toInsert);
+    const client = await getMongoClient();
+    const session = client.startSession();
+
+    try {
+      await session.withTransaction(async () => {
+        const result = await mealRegistrations.insertMany(toInsert, { session });
+        const logs = toInsert.map((registration, index) => buildMealActivityLog({
+          action: 'meal_registered',
+          registration: { ...registration, _id: result.insertedIds[index] },
+          targetUser: req.user,
+          actorUser: req.user,
+          trigger: 'bulk',
+          createdAt: registeredAt
+        }));
+        await insertActivityLogs(systemLogs, logs, { session });
+      });
+    } finally {
+      await session.endSession();
+    }
 
     return res.status(201).json({
       message: `Successfully registered for ${toInsert.length} meals`,

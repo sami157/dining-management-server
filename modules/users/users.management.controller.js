@@ -1,5 +1,5 @@
 const { ObjectId } = require('mongodb');
-const { getCollections } = require('../../config/connectMongodb');
+const { getCollections, getMongoClient } = require('../../config/connectMongodb');
 const { applyMealDefaultPreference } = require('./meal-default.utils');
 
 const VALID_ROLES = ['admin', 'manager', 'member', 'moderator', 'staff', 'super_admin'];
@@ -106,11 +106,22 @@ const updateMealDefault = async (req, res) => {
     }
 
     const collections = await getCollections();
-    const result = await applyMealDefaultPreference({
-      user: req.user,
-      mealDefault,
-      ...collections
-    });
+    const client = await getMongoClient();
+    const session = client.startSession();
+    let result;
+
+    try {
+      await session.withTransaction(async () => {
+        result = await applyMealDefaultPreference({
+          user: req.user,
+          mealDefault,
+          ...collections,
+          session
+        });
+      });
+    } finally {
+      await session.endSession();
+    }
 
     if (!result?.user) {
       return res.status(404).json({ error: 'User not found' });

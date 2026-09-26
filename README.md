@@ -8,6 +8,7 @@ The backend API for the Dining Management application. It provides the Express A
 - User profiles, roles, activation status, and meal preferences
 - Meal schedule generation and management
 - Meal registration, cancellation, quantity updates, bulk registration, and comments
+- Canonical meal registration and deregistration activity logs with manager/user visibility
 - Deposits, expenses, member balances, and meal-rate calculations
 - Monthly financial finalization and balance restoration when a finalization is undone
 - Temporary administrator-created password recovery codes

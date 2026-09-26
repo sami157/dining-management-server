@@ -47,6 +47,7 @@ async function createIndexes() {
     memberBalances,
     monthlyFinalization,
     passwordRecoveryCodes,
+    systemLogs,
   } = await getCollections();
 
   if (!args.has('--critical-only')) {
@@ -78,6 +79,8 @@ async function createIndexes() {
     await ensureUniqueIndex('monthlyFinalization.month unique', monthlyFinalization, { month: 1 });
     await ensureIndex('passwordRecoveryCodes.userId+used+expiresAt', passwordRecoveryCodes, { userId: 1, used: 1, expiresAt: 1 });
     await ensureIndex('passwordRecoveryCodes.expiresAt TTL', passwordRecoveryCodes, { expiresAt: 1 }, { expireAfterSeconds: 0 });
+    await ensureIndex('systemLogs.targetUserId+createdAt', systemLogs, { targetUserId: 1, createdAt: -1 });
+    await ensureIndex('systemLogs.createdAt+id', systemLogs, { createdAt: -1, _id: -1 });
   }
 
   console.log('All indexes created successfully');
