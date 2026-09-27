@@ -126,7 +126,7 @@ const registerMeal = async (req, res) => {
 
     const mealDate = new Date(date);
 
-    const { mealSchedules, mealRegistrations, systemLogs, monthlyFinalization } = await getCollections();
+    const { users, mealSchedules, mealRegistrations, systemLogs, monthlyFinalization } = await getCollections();
 
     const registrationMonth = getMonthFromDate(mealDate);
     if (!registrationMonth || !await assertMonthIsOpen(monthlyFinalization, registrationMonth)) {
